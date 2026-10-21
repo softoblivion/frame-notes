@@ -28,9 +28,10 @@ network resources, system fonts only (`Segoe UI`, `Cascadia Mono` / `Consolas` f
 | `js/composer.js` | the note being created or edited: text field, region tool, save / cancel |
 | `js/timeline.js` | ruler, markers, playhead, zoom / pan / scrub, hover card |
 | `js/notes.js` | notes panel list, selection, inline edit host |
-| `js/header.js` | open, file name and size, fps control, counts, Copy, Reveal menu, Keys, panel toggle |
-| `js/update.js` | version chip and update popover |
+| `js/header.js` | open, file name and size, fps control, counts, Copy split menu, Reveal menu, Recent menu, Keys, panel toggle |
+| `js/update.js` | version chip and update popover (with the check interval select) |
 | `js/empty.js` | empty state, recent list, drag and drop |
+| `js/recent.js` | recent entry rendering shared by the empty state and the header Recent menu, the entry context menu |
 | `js/keys.js` | keyboard map |
 | `js/ui.js` | toasts, error banner, `guard()` for calls, popover helper |
 | `js/icons.js` | transport icons (inline SVG) |
@@ -40,7 +41,7 @@ network resources, system fonts only (`Segoe UI`, `Cascadia Mono` / `Consolas` f
 
 ```
 +-------------------------------------------------------------------------------------------+
-| Open  promo_v3.mp4 1920x1080  [25 v] fps from file   FIX 1 ADD 0 REMOVE 2   Copy Reveal Keys Notes  v1.0.0 |
+| Open  promo_v3.mp4 1920x1080  [25 v] fps from file  FIX 1 ADD 0 REMOVE 2  Copy|v Reveal Recent Keys Notes v1.1.0 |
 +-------------------------------------------------------------------------------------------+
 | error banner (closable, only when there is an error)                                      |
 +------------------------------------------------------------------+------------------------+
@@ -61,8 +62,10 @@ network resources, system fonts only (`Segoe UI`, `Cascadia Mono` / `Consolas` f
   nominal rates (plus the current rate when it is not one of them) and a muted `from file` / `override` hint;
   `Reset` next to `override` calls `set_fps(null)`. When `fps_source` is `unknown` the control is outlined amber,
   the select shows `Set the frame rate`, and once playback has measured a rate a `Use 25` button appears. Counts per
-  type (the type names hide below 1180 px). `Copy`, `Reveal` menu (Video / Notes file / Images), `Keys`, `Notes`
-  (panel toggle), and the version chip at the far right. Without a video only `Open`, `Keys` and the version show.
+  type (the type names hide below 1180 px). `Copy` split button (the main part copies the data file text; the
+  caret opens a menu: `Notes file` with `Ctrl+C`, `Readable text` with `Ctrl+Shift+C`), `Reveal` menu (Video /
+  Notes file / Frames), `Recent` menu (the recent entries of section 2a), `Keys`, `Notes` (panel toggle), and the
+  version chip at the far right. Without a video only `Open`, `Keys` and the version show.
 - Stage: `<video>` without controls fills the stage with `object-fit: contain`. The overlay `<svg>` is positioned
   to the displayed frame rectangle (`min(cw/vw, ch/vh)` scale, centred) and gets `viewBox = 0 0 w h`; the rectangle
   is recomputed by a `ResizeObserver` on the stage and on `loadedmetadata` / `resize` of the video, so the overlay
@@ -76,9 +79,28 @@ network resources, system fonts only (`Segoe UI`, `Cascadia Mono` / `Consolas` f
 - Toasts: bottom centre above the timeline, 2.5 s, at most three. Error banner: under the header, closable,
   replaced by the next error.
 - Empty state (no video): dashed drop target with `Open video` (and `Choose file` in the mock), `Ctrl+O` hint,
-  recent list (name, folder, position as `frame N`; greyed and inert when `exists` is false).
+  recent list (section 2a).
 - Note type colours: FIX `#EF9F27`, ADD `#639922`, REMOVE `#E24B4A` for strokes, stems and dots; labels use a light
   ink on a dark tint of the same hue (`--fix-ink` on `--fix-bg` and so on) for contrast on the dark UI.
+
+## 2a. Recent entries and their context menu (`js/recent.js`)
+
+- One renderer for both places: the empty state list and the header `Recent` menu (a popover of up to 20 rows,
+  360 px wide; the open video's row is marked `open`). A row: name, folder (muted), position `frame N`, and a muted
+  `3 notes · 2 frames` when `notes_count` is not `null` (`1 note`, frames part left out when 0, `no notes` for 0).
+  A row whose video is missing (`exists: false`) is greyed; a click on it does nothing.
+- Click or `Enter` on a row: `open_video(path)` (the header popover closes first).
+- Right click, the context menu key or `Shift+F10` on a row: a context menu at the pointer (at the row for the
+  keyboard), clamped into the window, above everything else; `Esc`, a click outside, a scroll or a window blur
+  close it. Items:
+  - `Open` (disabled when the video is missing);
+  - `Reveal folder` -> `reveal_recent(path)` (disabled when the video is missing and `notes_dir` is `null`);
+  - `Delete notes` (disabled when `notes_count` is `null`): the first click turns the item into a red
+    `Delete 3 notes and 2 frames?` (`Delete the empty notes folder?` for 0 / 0) and keeps the menu open; the second
+    click calls `delete_notes(path)` and applies the returned State (the shell sends the toast); leaving the item
+    with the pointer for 3 s or pressing `Esc` resets it;
+  - a separator, then `Remove from recent` -> `forget_recent(path)`, applies the returned State.
+- Both calls go through `guard()`; an open note edit is saved before deleting the open video's notes.
 
 ## 3. State model
 
@@ -178,6 +200,7 @@ Active when no `input`, `textarea`, `select` or contenteditable has focus; `Spac
 | `F2` | edit the selected note (or the first note on the current frame) |
 | `Delete` | remove the selected note, toast `Note removed`, select the next one |
 | `Ctrl+C` | `copy_notes_text()` (only when no page text is selected) |
+| `Ctrl+Shift+C` | `copy_readable_text()` (same condition) |
 | `Ctrl+O` | `open_video(null)` |
 | `0` | reset the timeline zoom |
 | `?` | key help (also the `Keys` button; `Esc` closes) |
@@ -213,8 +236,10 @@ Active when no `input`, `textarea`, `select` or contenteditable has focus; `Spac
 The chip opens a popover: `message`, release notes as pre-wrapped plain text (max 200 px, scrolls) while a release
 is available / downloading / ready, `Check for updates` (disabled while checking or downloading), `Download`
 (enabled when `available`), `Restart` (enabled when `ready` and `can_apply`; `true` from `apply_update()` disables
-everything and shows nothing more), and `Download updates automatically` bound to
-`settings.auto_download_updates` through `set_setting`.
+everything and shows nothing more), `Download updates automatically` bound to
+`settings.auto_download_updates` through `set_setting`, and a `Check for updates` select bound to
+`settings.update_check_interval` through `set_setting` with the options `Every 30 minutes` (`30m`), `Every hour`
+(`1h`), `Every 6 hours` (`6h`), `Every day` (`1d`), `Every week` (`1w`).
 
 ## 9. Mock mode (`?mock=1`)
 
@@ -231,8 +256,12 @@ everything and shows nothing more), and `Download updates automatically` bound t
   section 6, `image_url` = data URL of the received PNG; `notes_text()` renders the notes file format.
 - `open_video(null)` opens a browser file picker; dropped and picked files are opened as object URLs (the file name
   travels in the URL fragment). A recent entry with `exists: false` (`promo_v2.mp4`) answers `File not found.`.
-- `copy_notes_text()` writes to the browser clipboard and sends the `Notes copied` toast; `reveal()` sends a toast
-  (or rejects `No notes file yet.` / `No images yet.`); `apply_update()` resolves `true` when ready.
+- `copy_notes_text()` / `copy_readable_text()` write to the browser clipboard and send their toasts; `reveal()` and
+  `reveal_recent()` send a toast (or reject `No notes file yet.` / `No images yet.` / `File not found.`);
+  `apply_update()` resolves `true` when ready.
+- Recent: the sample video and a missing `promo_v2.mp4` that still has notes (`notes_count: 4`, `frames_count: 1`);
+  `delete_notes()` clears the counts (and the open session's notes when it is the open video), `forget_recent()`
+  drops the entry; counts of the open video follow its notes.
 
 ## 10. Testing
 

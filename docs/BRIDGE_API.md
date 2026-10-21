@@ -20,10 +20,15 @@ for the reviewer (never a traceback; the full traceback goes to the log). Argume
 | `add_note(note)` | `{frame, kind, text, region, image_png}` | `Note` | `region`: `Region \| null`; `image_png`: base64 string of a PNG or `null`; `kind` one of `FIX`, `ADD`, `REMOVE`. The core returns the whole payload; the bridge extracts the new note (highest `order`) and the `state` event carries the rest |
 | `update_note(patch)` | `{id, text?, region?, image_png?}` | `Note` | missing keys keep the value; `region: null` removes the region and its image |
 | `remove_note(id)` | `string` | `null` | |
-| `notes_text()` | | `string` | the notes file text as it would be written |
-| `copy_notes_text()` | | `null` | puts `notes_text()` on the Windows clipboard |
-| `reveal(which)` | `"video" \| "notes" \| "images"` | `null` | opens Explorer with the file or folder selected; error when the notes file or folder does not exist yet |
-| `set_setting(key, value)` | `string, any` | `State` | allowed keys: `auto_download_updates`, `notes_panel_open` |
+| `notes_text()` | | `string` | the data file text as it would be written |
+| `copy_notes_text()` | | `null` | puts `notes_text()` on the Windows clipboard; toast `Notes copied` |
+| `readable_text()` | | `string` | the readable text (`Session.readable_text()`: the export without the image lines) |
+| `copy_readable_text()` | | `null` | puts `readable_text()` on the Windows clipboard; toast `Readable notes copied` |
+| `reveal(which)` | `"video" \| "notes" \| "images"` | `null` | opens Explorer with the item selected: the video; the data file inside the notes folder (`notes`); the `frames` folder (`images`). Error when it does not exist yet |
+| `reveal_recent(path)` | `string` | `null` | for a recent entry: Explorer with its notes folder selected, or the video when there is no folder. Error `File not found.` when neither exists |
+| `delete_notes(path)` | `string` | `State` | removes the notes folder of that video (`core.notes.delete_notes`); toast `Deleted 3 notes and 2 frames.` (counts from the result, `1 note`, `1 frame`, the frames part left out when 0; `Deleted the empty notes folder.` when both are 0). When `path` is the open video the session is opened again (empty) before the state is returned. Errors: the refusals of `delete_notes` |
+| `forget_recent(path)` | `string` | `State` | removes the entry from `recent` and saves the settings; files are not touched; unknown path is not an error |
+| `set_setting(key, value)` | `string, any` | `State` | allowed keys: `auto_download_updates` (bool), `notes_panel_open` (bool), `update_check_interval` (one of `30m`, `1h`, `6h`, `1d`, `1w`: the keys of the updater's `CHECK_INTERVALS`; anything else `Invalid setting value.`) |
 | `log(level, message)` | `string, string` | `null` | `level` in `debug`, `info`, `warning`, `error`; written to `app.log` as `ui: <message>` |
 | `update_status()` | | `UpdateStatus` | the current self-update status |
 | `check_updates()` | | `UpdateStatus` | starts a check in the background (ignored while a check or download runs); progress arrives as `update` events |
@@ -34,7 +39,10 @@ Self-update wiring (shell side): the updater is built once by `core.selfupdate.b
 `on_status` bound to the `update` event; `main.py` checks `argv[0] == APPLY_FLAG` first of all and returns
 `run_apply(argv[1:])` before logging, settings or any window; after `ready()` the shell calls `startup()` then
 `check_background()`; when a status with stage `available` arrives and `settings.auto_download_updates` is on,
-the shell calls `download_background()` itself. From source (`exe_path` is `None`) the check and download work,
+the shell calls `download_background()` itself. After the launch check the shell starts the package's
+`UpdateScheduler(updater, settings.update_check_interval)` (an unknown stored key falls back to
+`DEFAULT_CHECK_INTERVAL`); `set_setting("update_check_interval", key)` calls `scheduler.set_interval(key)`; the
+shutdown calls `scheduler.stop()`. From source (`exe_path` is `None`) the check and download work,
 `apply_update()` returns `false` and the status message says it applies to the packaged exe only.
 
 ## 2. Events (Python -> JS)
@@ -69,10 +77,16 @@ U+2029 escaped.
   "version": "1.0.0",
   "video": { ...core fields..., "url": "http://127.0.0.1:42011/media/8f1c2e.../promo_v3.mp4" },
   "timecode": {...}, "notes": [...], "counts": {...},
-  "recent": [{"path": "D:\\clips\\promo_v3.mp4", "name": "promo_v3.mp4", "last_frame": 307, "exists": true}],
-  "settings": {"auto_download_updates": true, "notes_panel_open": true}
+  "recent": [{"path": "D:\\clips\\promo_v3.mp4", "name": "promo_v3.mp4", "last_frame": 307, "exists": true,
+              "notes_count": 3, "frames_count": 2, "notes_dir": "D:\\clips\\promo_v3_notes", "is_open": true}],
+  "settings": {"auto_download_updates": true, "notes_panel_open": true, "update_check_interval": "30m"}
 }
 ```
+
+`recent[]`: `notes_count` / `frames_count` come from `core.notes.notes_summary(path)` (`null` both when the video
+has no data file, new or legacy); the shell caches the summary per data file by modification time and size, so a
+state event reads a data file only after it changed. `notes_dir` is `notes_dir_for(path)` when that folder exists,
+else `null`. `is_open` marks the entry of the open video.
 
 `Note` and `Region` are the objects of `CORE.md` (`Note` includes `timecode`, `image` and `image_path`;
 `image_path` is also served as `"image_url": "http://127.0.0.1:<port>/image/<token>/<name>"` so the UI can show
@@ -86,7 +100,7 @@ One `ThreadingHTTPServer` on `127.0.0.1`, the first free port from 42011 to 4203
 |---|---|
 | `/` and `/<file>` | the UI folder (`src/frame_notes/ui/`, or the bundled copy, or `--ui-dir`): safe path join, MIME by extension (`.js` as `text/javascript`, `.mjs` too), `Cache-Control: no-store` |
 | `/media/<token>/<name>` | the opened video file; `Accept-Ranges: bytes`, `Range` requests answered with `206` and `Content-Range`, `HEAD` supported, `Content-Type` from the extension (`video/mp4`, `video/webm`, `video/quicktime`, `video/x-matroska`) |
-| `/image/<token>/<name>` | a PNG from the images folder of the opened video; `name` must match an existing note image |
+| `/image/<token>/<name>` | a PNG from the `frames` folder of the opened video; `name` must match an existing note image |
 
 The token is a fresh `secrets.token_hex(16)` for every opened video; the previous token stops working. Anything
 else is `404`. The server never lists directories and never serves a path outside the UI folder, the opened
@@ -94,7 +108,7 @@ video, or the images folder.
 
 After `open_video` the shell sets the native window title to `<video name> - Frame Notes` (pywebview does not mirror
 `document.title`). The server answers only requests whose `Host` is loopback, serves `/media` for the exact file
-name only and `/image` for existing `.png` files directly inside the images folder.
+name only and `/image` for existing `.png` files directly inside the `frames` folder.
 
 ## 5. Drag and drop
 
@@ -117,3 +131,7 @@ Messages are one English sentence each, neutral and factual (`CONVENTIONS.md`, U
 | notes file cannot be written | `Could not write promo_v3_notes.txt. The notes stay in memory until the next change succeeds.` |
 | unknown kind / bad region | `Invalid note.` |
 | reveal with nothing to show | `No notes file yet.` / `No images yet.` |
+| delete with nothing to delete | `There are no notes for promo_v3.mp4.` |
+| notes folder of another video | `The notes folder promo_v3_notes belongs to promo_v3.mov.` |
+| notes folder with foreign content | `The notes folder promo_v3_notes holds other files. Delete it by hand.` |
+| 1.0 layout cannot be moved | `The notes of promo_v3.mp4 could not be moved into the promo_v3_notes folder.` |
