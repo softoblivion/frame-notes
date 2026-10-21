@@ -89,7 +89,7 @@ class Note:
     kind: str           # one of KINDS
     text: str           # one line; tabs, CR and LF replaced by spaces, stripped
     region: Region | None = None
-    image: str | None = None      # file name inside the images folder, no path
+    image: str | None = None      # file name inside frames/, no path
     order: int = 0      # creation sequence inside the session, breaks ties between notes on one frame
 
 @dataclass
@@ -100,8 +100,14 @@ class NotesFile:
     notes: list[Note]
     extra: list[str]              # lines that did not parse, in original order, written back after the notes
 
-def notes_path_for(video: Path) -> Path      # same folder, "<stem>_notes.txt"
-def images_dir_for(video: Path) -> Path      # same folder, "<stem>_notes"
+FRAMES_DIR_NAME = "frames"
+
+# Layout (ARCHITECTURE.md section 6): everything inside one folder next to the video.
+def notes_dir_for(video: Path) -> Path       # same folder as the video, "<stem>_notes"
+def notes_path_for(video: Path) -> Path      # notes_dir_for(video) / "<stem>_notes.txt" (data file)
+def export_path_for(video: Path) -> Path     # notes_dir_for(video) / "<stem>_notes.md" (readable export)
+def images_dir_for(video: Path) -> Path      # notes_dir_for(video) / "frames"
+def legacy_notes_path_for(video: Path) -> Path   # 1.0 layout: "<stem>_notes.txt" beside the video
 def image_name(note: Note, tb: TimecodeBase, taken: set[str]) -> str
     # "<timecode with ':' and ';' replaced by '-'>_<KIND>.png"; "_2", "_3"... appended while the name is in `taken`
 def parse(text: str) -> NotesFile
@@ -111,7 +117,38 @@ def parse(text: str) -> NotesFile
     # "rect " or "point ", otherwise it is the image name; a line that fails goes to `extra`. Blank lines ignored.
 def render(nf: NotesFile) -> str
     # header, notes sorted by (frame, order), extra lines; LF line endings, trailing newline; "# duration" omitted when None
+def render_readable(nf: NotesFile, images: bool = True) -> str
+    # the readable export of ARCHITECTURE.md section 6: "# <source>", blank, summary "<fps> fps · <duration> ·
+    # FIX n · ADD n · REMOVE n" (duration part left out when None), blank, one "- **<timecode>** · <KIND> · <text>"
+    # line per note sorted by (frame, order) (" · <text>" left out when the text is empty), followed by
+    # "  ![](frames/<image>)" when `images` and the note has a plain image name; "No notes." when there are none.
+    # Extra lines are not exported. LF endings, trailing newline.
 class NotesFormatError(ValueError)   # message is a user-facing English sentence
+
+class NotesLayoutError(OSError)      # migrate / delete refused or failed; message is a user-facing English sentence
+
+def migrate_layout(video: Path, log: logging.Logger) -> bool
+    # Moves a 1.0 layout into the folder (ARCHITECTURE.md section 6, "Life cycle"); True when anything moved.
+    # 1. nothing to do when neither the legacy data file nor a *.png directly in notes_dir_for(video) exists;
+    # 2. a legacy data file is read and parsed first: NotesFormatError (or a source of another video) -> no move,
+    #    returns False (Session.open then reports the legacy file as in 1.0);
+    # 3. *.png directly in the folder -> frames/ with os.replace (a name already in frames/ is left and logged);
+    # 4. the legacy data file -> notes_path_for(video) with one os.replace, unless a data file is already there
+    #    (then the legacy file stays and a warning is logged);
+    # each step logs at INFO. OSError of a step is raised as NotesLayoutError("The notes of <name> could not be moved
+    # into the <stem>_notes folder."). The export is written by the session afterwards.
+def notes_summary(video: Path) -> dict | None
+    # {"notes": n, "frames": m} from the data file (the new one, else the legacy one beside the video); m counts
+    # notes with a plain image name. None when there is no data file; also None when it cannot be read or parsed.
+def delete_notes(video: Path, log: logging.Logger) -> dict
+    # Removes notes_dir_for(video) and a legacy data file beside the video; returns {"notes": n, "frames": m,
+    # "path": str(folder)} (counts as notes_summary before the removal, frames = PNG files removed).
+    # Refuses with NotesLayoutError when: nothing exists ("There are no notes for <name>."); the folder is not a
+    # plain directory (symlink, junction, file); a data file names another source ("The notes folder <stem>_notes
+    # belongs to <source>."); the folder holds anything other than the data file, the export, frames/ and *.png
+    # directly inside (1.0 layout), each optionally with a ".part" / ".rename" leftover, or frames/ holds anything
+    # but *.png and those leftovers ("The notes folder <stem>_notes holds other files. Delete it by hand.").
+    # The check runs before anything is removed; then files are unlinked and the folders removed with rmdir.
 ```
 
 ## `probe.py`
@@ -186,6 +223,17 @@ def build_updater(paths: AppPaths, version: str, on_status: Callable[[dict], Non
     #              logger_name="frame_notes.selfupdate")
 ```
 
+```python
+from ..vendor.selfupdate import CHECK_INTERVALS, DEFAULT_CHECK_INTERVAL, UpdateScheduler   # re-exported
+
+INTERVAL_KEYS = ("30m", "1h", "6h", "1d", "1w")   # the keys of CHECK_INTERVALS, in display order
+
+def build_scheduler(updater: SelfUpdater, interval_key: str) -> UpdateScheduler
+    # UpdateScheduler(updater, interval_key, logger_name="frame_notes.selfupdate.schedule"); an unknown key gives
+    # DEFAULT_CHECK_INTERVAL. The shell starts it after the launch check, calls set_interval(key) when the setting
+    # changes and stop() on exit; the scheduler skips a period while an update waits for the restart.
+```
+
 Test: `build_updater` with a scratch `AppPaths` yields a `SelfUpdater` whose `config` carries exactly these values
 and whose `status()["stage"]` is `idle`; no network is touched.
 
@@ -199,6 +247,7 @@ DEFAULTS = {
     "fps_overrides": {},               # {absolute video path: fps}
     "auto_download_updates": True,
     "notes_panel_open": True,
+    "update_check_interval": "30m",    # key of the self-updater's CHECK_INTERVALS; validated by the shell
 }
 
 class Settings:
@@ -207,6 +256,7 @@ class Settings:
     def save(self) -> None             # atomic_write_json
     data: dict                         # the current values (deep copy of DEFAULTS merged with the file)
     def touch_recent(self, path: Path, last_frame: int) -> None
+    def forget_recent(self, path: Path) -> bool   # removes the entry (case-insensitive path match); True when found
     def set_fps_override(self, path: Path, fps: float | None) -> None
     def fps_override(self, path: Path) -> float | None
 ```
@@ -229,14 +279,20 @@ class Session:
                     image_png: bytes | None = None) -> dict
     def remove_note(self, note_id: str) -> None
     def notes_text(self) -> str                  # render() of the current state
+    def readable_text(self) -> str               # render_readable(images=False) of the current state ("" like notes_text)
 ```
 
-- Every mutation writes the notes file with `atomic_write_text` and the image (when given) with
-  `atomic_write_bytes` into the images folder (created on demand; removed when empty after a removal), then
-  calls `on_change(self.payload())`. A note with no region never has an image; replacing a region without a new
+- `open()` first calls `migrate_layout(video, log)` (a `NotesLayoutError` becomes `SessionError` with its message),
+  then reads `notes_path_for(video)`; when that file does not exist but a legacy data file does (one that
+  migration left in place), the legacy file is validated as in 1.0 and its errors are raised (another source,
+  newer format). After a migration the export is written once (when the frame rate is known).
+- Every mutation writes the data file with `atomic_write_text`, then the export (`export_path_for`, same
+  conditions), and the image (when given) with `atomic_write_bytes` into `frames/` (created on demand; removed
+  when empty after a removal), then calls `on_change(self.payload())`. A failed export write is reported like a
+  failed data file write (`SessionError("The notes could not be saved to <path>")`). A note with no region never has an image; replacing a region without a new
   image keeps the old image file; `remove_note` deletes the image file.
-- A video that has no notes file and no notes gets no file; once a file exists it is kept (header only when the
-  last note is removed).
+- A video that has no notes file and no notes gets no folder; once the data file exists it is kept (header only,
+  with the export, when the last note is removed).
 - `fps` precedence: settings override, else probe, else the `# fps:` header of an existing notes file (reported as
   `fps_source: "override"`), else `None` (payload `fps: null`, `fps_text: ""`, `timecode: null`; `add_note` and
   `update_note` raise `SessionError` until the reviewer sets a rate). `set_fps` keeps frame numbers, rewrites the
@@ -260,13 +316,16 @@ class Session:
   "video": {"path": "D:\\clips\\promo_v3.mp4", "name": "promo_v3.mp4", "dir": "D:\\clips",
             "width": 1920, "height": 1080, "duration": 92.4, "duration_frames": 2310,
             "fps": 25.0, "fps_text": "25", "fps_source": "file" | "override" | "unknown",
-            "notes_path": "D:\\clips\\promo_v3_notes.txt", "images_dir": "D:\\clips\\promo_v3_notes",
+            "notes_dir": "D:\\clips\\promo_v3_notes",
+            "notes_path": "D:\\clips\\promo_v3_notes\\promo_v3_notes.txt",
+            "export_path": "D:\\clips\\promo_v3_notes\\promo_v3_notes.md",
+            "images_dir": "D:\\clips\\promo_v3_notes\\frames",
             "last_frame": 0},
   "timecode": {"base": 25, "drop": false, "digits": 2, "separator": ":"},
   "notes": [{"id": "3f9a2c1d", "frame": 307, "timecode": "0:00:12:07", "kind": "FIX",
              "text": "logo flickers for two frames",
              "region": {"shape": "rect", "x0": 0.54, "y0": 0.36, "x1": 0.88, "y1": 0.8},
-             "image": "0-00-12-07_FIX.png", "image_path": "D:\\clips\\promo_v3_notes\\0-00-12-07_FIX.png",
+             "image": "0-00-12-07_FIX.png", "image_path": "D:\\clips\\promo_v3_notes\\frames\\0-00-12-07_FIX.png",
              "order": 1}],
   "counts": {"FIX": 1, "ADD": 0, "REMOVE": 0}
 }

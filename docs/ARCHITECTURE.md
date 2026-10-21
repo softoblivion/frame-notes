@@ -2,8 +2,8 @@
 
 Frame Notes is a Windows desktop utility for reviewing a rendered video and logging change requests at exact
 frames. The reviewer opens a video, plays or steps through it, pauses on a frame and presses one key per kind of
-request. Every note is stored with an After Effects style timecode in a plain text file next to the video, so the
-editor can jump to each frame in After Effects or Premiere without conversion.
+request. Every note is stored with an After Effects style timecode in a plain text file inside a notes folder next
+to the video, so the editor can jump to each frame in After Effects or Premiere without conversion.
 
 ## 1. Stack
 
@@ -50,11 +50,22 @@ by the integrator, `UI.md` by the UI worker from this file. This file is the beh
 
 - Ways in: drag and drop onto the window, the **Open** button (native file dialog), a path as the first command
   line argument (Explorer "Open with", a shortcut), the recent-files list.
-- On open the core probes the file (section 7), looks for an existing notes file (section 6) and loads it; the UI
-  shows the video, the timeline with the existing notes and the notes list. The last playback position of that
-  file is restored from settings.
+- On open the core probes the file (section 7), moves a 1.0 notes layout into the notes folder (section 6, "Life
+  cycle"), looks for an existing data file and loads it; the UI shows the video, the timeline with the existing
+  notes and the notes list. The last playback position of that file is restored from settings.
 - One video at a time; opening another one replaces the current session (nothing is lost: the notes file is
   always saved).
+
+### Recent videos
+
+- The recent list (at most 20) shows in the empty state and, while a video is open, in the header's **Recent**
+  menu. An entry shows the name, the folder, the last position and how many notes and frame images it has
+  (read from its data file; nothing when it has no notes folder). A click opens it.
+- A right click (or the context menu key) on an entry opens a small menu: **Open**, **Reveal folder** (the notes
+  folder selected in Explorer, or the video when there is no folder), **Delete notes** (section 6; the item turns
+  into `Delete 3 notes and 2 frames?` and needs a second click; a toast confirms), **Remove from recent** (only
+  the list entry; files stay). The menu works for the video that is open too: deleting its notes reloads it empty.
+  A missing video keeps Reveal folder and Delete notes when its notes folder still exists.
 
 ### Playback and stepping
 
@@ -83,7 +94,8 @@ The time display shows the AE timecode of the current frame and the total durati
 | `F2` or double click | edit the text of the selected note |
 | `Delete` | remove the selected note |
 | `↑` / `↓` | select the previous / next note and seek to its frame |
-| `Ctrl+C` (no text field focused) | copy the notes file text to the clipboard |
+| `Ctrl+C` (no text field focused) | copy the data file text to the clipboard |
+| `Ctrl+Shift+C` (no text field focused) | copy the readable text (section 6) to the clipboard |
 | `Ctrl+O` | open a video |
 
 Pressing `1` / `2` / `3` during playback pauses first, then starts a note at the paused frame. Two notes may
@@ -105,7 +117,7 @@ it in words.
    focused the playback keys are plain characters.
 4. On save with a region the UI captures the current frame from the `<video>` element into a canvas at the
    video's native size, draws the region on it the way it is shown on screen, encodes PNG and sends it with the
-   note. The core writes it to the images folder (section 6). A note without a region gets no image.
+   note. The core writes it to the `frames\` folder (section 6). A note without a region gets no image.
 5. Selecting a note (list, marker, `↑` / `↓`) seeks to its frame and shows its region over the video; the region
    stays visible while the playhead is on that frame. `F2` edits the text; the region of an existing note is
    replaced by dragging a new one while the note is being edited; `Backspace` in the empty text field of an edit
@@ -125,11 +137,11 @@ it in words.
 
 ### Saving
 
-- The notes file is written on every change (add, edit, remove) with an atomic replace; there is no Save button.
-  The window title shows the video name; a failed write shows an error banner with the path and keeps the notes in
-  memory until the next change succeeds.
-- Removing the last note leaves an empty notes file (header only) so the reviewer sees that the review happened.
-  A video with no notes file and no notes gets no file.
+- The data file and the readable export are written on every change (add, edit, remove, frame rate) with an
+  atomic replace; there is no Save button. The window title shows the video name; a failed write shows an error
+  banner with the path and keeps the notes in memory until the next change succeeds.
+- Removing the last note leaves the notes folder with a header-only data file so the reviewer sees that the review
+  happened. A video with no notes gets no folder (section 6, "Life cycle").
 
 ## 5. Timecode
 
@@ -151,15 +163,20 @@ base from the frame rate):
 
 ## 6. Notes file
 
-Written next to the video: `<video name without extension>_notes.txt` (`promo_v3.mp4` -> `promo_v3_notes.txt`).
-UTF-8 without BOM, LF line endings, tab-separated columns. Frame images of notes with a region go to the folder
-`<video name without extension>_notes\` next to it.
+Since 1.1.0 everything of one review lives in one folder next to the video, `<video name without extension>_notes\`
+(`promo_v3.mp4` -> `promo_v3_notes\`); decision record `docs/decisions/0002-notes-folder.md`.
 
 ```
 promo_v3.mp4
-promo_v3_notes.txt
-promo_v3_notes\0-00-12-07_FIX.png
+promo_v3_notes\
+    promo_v3_notes.txt               data file: the source of truth, read back by the app
+    promo_v3_notes.md                readable export: rewritten on every change, never read back
+    frames\0-00-12-07_FIX.png        frame images of notes with a region
 ```
+
+### Data file `<stem>_notes.txt`
+
+UTF-8 without BOM, LF line endings, tab-separated columns.
 
 ```
 # Frame Notes 1
@@ -172,19 +189,61 @@ promo_v3_notes\0-00-12-07_FIX.png
 ```
 
 - Header lines start with `# `; the first line carries the format version. `source` is the file name (no path)
-  the notes belong to; on open the app refuses to attach a notes file whose `source` names a different file and
-  offers to start a new one (`promo_v3_notes.txt` may belong to `promo_v3.mov`).
+  the notes belong to; on open the app refuses to attach a notes file whose `source` names a different file
+  (`promo_v3_notes\` may belong to `promo_v3.mov`).
 - Note lines: `<timecode>\t<TYPE>\t<text>[\t<region>[\t<image>]]`; `TYPE` is `FIX`, `ADD` or `REMOVE`; text is one
   line (tabs and line breaks typed by the user are replaced by spaces). `region` is `rect x0,y0 x1,y1` or
-  `point x,y` in fractions of the frame with three decimals; `image` is the file name inside the images folder,
+  `point x,y` in fractions of the frame with three decimals; `image` is the file name only, inside `frames\`:
   `<timecode with '-' instead of ':' or ';'>_<TYPE>.png`, with `_2`, `_3` added when the name is taken. Lines
   that do not parse are kept on save (after the notes, in their original order), so a hand-edited file is not
   damaged.
+- The line format is the one of 1.0 and keeps format version 1: only the location of the files changed, which the
+  migration below handles, so a 1.0 file is read as it is.
 - The image shows the whole frame at the video's native size with the region drawn on it, so the editor sees
-  what is meant without the app. Removing a note deletes its image; an images folder that becomes empty is
+  what is meant without the app. Removing a note deletes its image; a `frames\` folder that becomes empty is
   removed.
-- The file is readable without the app and pastes into a chat as it is. The timecode column is the one the
-  editor types into the AE time field.
+- The timecode column is the one the editor types into the AE time field.
+
+### Readable export `<stem>_notes.md`
+
+Plain Markdown without tables, so it reads well raw (Notepad, a chat) and in any Markdown viewer. Written next to
+the data file every time the data file is written; never parsed.
+
+```
+# promo_v3.mp4
+
+25 fps · 0:01:32:10 · FIX 1 · ADD 1 · REMOVE 1
+
+- **0:00:12:07** · FIX · logo flickers for two frames
+  ![](frames/0-00-12-07_FIX.png)
+- **0:00:40:00** · ADD · subtitle for the second speaker
+- **0:01:02:15** · REMOVE · second take of the handshake
+  ![](frames/0-01-02-15_REMOVE.png)
+```
+
+- Heading: the video file name. Summary line: frame rate, duration (left out when unknown), count per type.
+- One list item per note in timecode order; a note with a frame image continues on an indented second line with
+  the image, linked relative to the folder, so viewers show it inline right after the text. Note text is
+  written as typed (no Markdown escaping). A review without notes reads `No notes.` under the summary. Lines of
+  the data file that did not parse are not exported.
+- The header **Copy** menu copies the data file text (`Ctrl+C`) or the readable text (`Ctrl+Shift+C`); the
+  clipboard copy of the readable text leaves the image lines out, because relative links mean nothing in a chat.
+
+### Life cycle
+
+- A video with no notes and no notes folder gets nothing on disk; the folder with the data file and the export
+  appears with the first note. Removing the last note keeps the folder with the header-only data file and the
+  export (`No notes.`), so the editor sees that the review happened.
+- Migration of the 1.0 layout (`<stem>_notes.txt` beside the video and / or images directly in `<stem>_notes\`)
+  runs once, on open: the images directly in the folder move into `frames\` first, then the data file moves into
+  the folder with one rename, then the export is written. Every step is a rename on the same volume, so a crash
+  midway leaves readable files and the next open finishes the move. A legacy data file that does not parse or
+  whose `source` names another video is left in place and the open reports it as in 1.0. When the folder already
+  holds a data file, that file wins and a legacy file beside the video is left untouched (logged). Every migration
+  is logged with what moved.
+- **Delete notes** (Recent context menu) removes the whole `<stem>_notes\` folder of that video, and a legacy data
+  file beside the video, after an inline confirmation. It refuses when the folder holds anything the app does not
+  write (another file, a sub-folder other than `frames\`) or when the data file belongs to another video.
 
 ## 7. Probe (frame rate, duration, size)
 
@@ -209,11 +268,11 @@ always set it to a scratch location).
 
 | Path | Content |
 |---|---|
-| `settings.json` | window size and position, last folder, recent files (path, last frame, fps override), `check_updates` (always on, kept for forward compatibility), `auto_download_updates` |
+| `settings.json` | window size and position, last folder, recent files (path, last frame, fps override), `check_updates` (always on, kept for forward compatibility), `auto_download_updates`, `update_check_interval` |
 | `logs\app.log` | rotating application log |
 | `updates\` | downloaded releases and `apply.log` of the self-updater |
 
-The notes file (section 6) is the only file written outside this folder. pywebview runs in `private_mode`;
+The notes folder of a reviewed video (section 6) is the only thing written outside this folder. pywebview runs in `private_mode`;
 no WebView2 profile folder is kept.
 
 ## 9. Video formats
@@ -229,7 +288,8 @@ timecodes.
 
 ## 10. Self-update
 
-Recipe 1 of `RECIPES.md`: check on every launch in the background, download to the data folder on the reviewer's
+Recipe 1 of `RECIPES.md`: check on every launch in the background and then on a timer (setting
+`update_check_interval`: `30m` default, `1h`, `6h`, `1d`, `1w`, chosen in the update popover), download to the data folder on the reviewer's
 click (or automatically when `auto_download_updates` is on), verify size and SHA-256 against `SHA256SUMS`, swap
 the exe on **Restart**. Release assets are exactly `FrameNotes.exe` and `SHA256SUMS`; tags `vX.Y.Z`.
 
@@ -256,7 +316,8 @@ Configuration (`UpdateConfig`, built in one place, e.g. `src/frame_notes/core/se
 
 Entry point: `argv[0] == APPLY_FLAG` (`--apply-update`) goes to `run_apply(argv[1:])` before the single-instance
 mutex and before any window. Calls: `startup()` once per launch, `check_background()` on launch and on the
-button, `download_background()`, `apply()` (True -> shut down the way the close button does). The status payload
+button, the package's `UpdateScheduler(updater, interval_key)` started after the launch check (`set_interval(key)` when the
+setting changes, `stop()` on exit), `download_background()`, `apply()` (True -> shut down the way the close button does). The status payload
 is the package's `UpdateStatus`, documented unchanged in the bridge contract. `build.ps1` writes
 `release\SHA256SUMS` as `<sha256>  FrameNotes.exe`; the PyInstaller spec collects the `frame_notes` submodules,
 which includes the vendored package.
@@ -278,7 +339,7 @@ which includes the vendored package.
 ```
 video file ──open──> core.probe ──fps, duration, size──┐
                      core.notes.parse(<name>_notes.txt) ┤──> core.session (notes in memory, sorted)
-                                                        │          │ every change: notes file + PNG images
+                                                        │          │ every change: data file + export + PNG
 UI <video> + timeline <──event state ── bridge <──> core.session.save (atomic replace)
 UI keys 1/2/3, region, text ──calls (add_note, update_note, remove_note)──> bridge ──> session
 ```
@@ -288,6 +349,6 @@ renders is the one the session sent after the last change.
 
 ## 13. Version
 
-`src/frame_notes/__init__.py`, `__version__ = "1.0.0"`; build script and UI read it from there. SemVer; the first
+`src/frame_notes/__init__.py`, `__version__ = "1.1.0"`; build script and UI read it from there. SemVer; the first
 release is 1.0.0 (the user's rule for every project): from there minor = features, patch = fixes, major =
 breaking change for users (notes file format, key bindings).
