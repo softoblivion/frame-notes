@@ -29,7 +29,7 @@ network resources, system fonts only (`Segoe UI`, `Cascadia Mono` / `Consolas` f
 | `js/timeline.js` | ruler, markers, playhead, zoom / pan / scrub, hover card |
 | `js/notes.js` | notes panel list, selection, inline edit host |
 | `js/header.js` | open, file name and size, fps control, counts, Copy split menu, Reveal menu, Recent menu, Keys, panel toggle |
-| `js/update.js` | version chip and update popover (with the check interval select) |
+| `js/update.js` | version chip and update popover (with the automatic download checkbox and its hint) |
 | `js/empty.js` | empty state, recent list, drag and drop |
 | `js/recent.js` | recent entry rendering shared by the empty state and the header Recent menu, the entry context menu |
 | `js/keys.js` | keyboard map |
@@ -237,9 +237,8 @@ The chip opens a popover: `message`, release notes as pre-wrapped plain text (ma
 is available / downloading / ready, `Check for updates` (disabled while checking or downloading), `Download`
 (enabled when `available`), `Restart` (enabled when `ready` and `can_apply`; `true` from `apply_update()` disables
 everything and shows nothing more), `Download updates automatically` bound to
-`settings.auto_download_updates` through `set_setting`, and a `Check for updates` select bound to
-`settings.update_check_interval` through `set_setting` with the options `Every 30 minutes` (`30m`), `Every hour`
-(`1h`), `Every 6 hours` (`6h`), `Every day` (`1d`), `Every week` (`1w`).
+`settings.auto_download_updates` through `set_setting`, with a small muted line under it: `Checked every 5 minutes;
+installing still needs a restart.` The check period is not a setting.
 
 ## 9. Mock mode (`?mock=1`)
 

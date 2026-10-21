@@ -28,7 +28,7 @@ for the reviewer (never a traceback; the full traceback goes to the log). Argume
 | `reveal_recent(path)` | `string` | `null` | for a recent entry: Explorer with its notes folder selected, or the video when there is no folder. Error `File not found.` when neither exists |
 | `delete_notes(path)` | `string` | `State` | removes the notes folder of that video (`core.notes.delete_notes`); toast `Deleted 3 notes and 2 frames.` (counts from the result, `1 note`, `1 frame`, the frames part left out when 0; `Deleted the empty notes folder.` when both are 0). When `path` is the open video the session is opened again (empty) before the state is returned. Errors: the refusals of `delete_notes` |
 | `forget_recent(path)` | `string` | `State` | removes the entry from `recent` and saves the settings; files are not touched; unknown path is not an error |
-| `set_setting(key, value)` | `string, any` | `State` | allowed keys: `auto_download_updates` (bool), `notes_panel_open` (bool), `update_check_interval` (one of `30m`, `1h`, `6h`, `1d`, `1w`: the keys of the updater's `CHECK_INTERVALS`; anything else `Invalid setting value.`) |
+| `set_setting(key, value)` | `string, any` | `State` | allowed keys: `auto_download_updates` (bool), `notes_panel_open` (bool); any other key is `Unknown setting.`, a value of the wrong type `Invalid setting value.` |
 | `log(level, message)` | `string, string` | `null` | `level` in `debug`, `info`, `warning`, `error`; written to `app.log` as `ui: <message>` |
 | `update_status()` | | `UpdateStatus` | the current self-update status |
 | `check_updates()` | | `UpdateStatus` | starts a check in the background (ignored while a check or download runs); progress arrives as `update` events |
@@ -40,9 +40,8 @@ Self-update wiring (shell side): the updater is built once by `core.selfupdate.b
 `run_apply(argv[1:])` before logging, settings or any window; after `ready()` the shell calls `startup()` then
 `check_background()`; when a status with stage `available` arrives and `settings.auto_download_updates` is on,
 the shell calls `download_background()` itself. After the launch check the shell starts the package's
-`UpdateScheduler(updater, settings.update_check_interval)` (an unknown stored key falls back to
-`DEFAULT_CHECK_INTERVAL`); `set_setting("update_check_interval", key)` calls `scheduler.set_interval(key)`; the
-shutdown calls `scheduler.stop()`. From source (`exe_path` is `None`) the check and download work,
+`UpdateScheduler(updater)`, which checks every 5 minutes (waiting longer after failed checks, skipping the check
+without a network connection; no setting); the shutdown calls `scheduler.stop()`. From source (`exe_path` is `None`) the check and download work,
 `apply_update()` returns `false` and the status message says it applies to the packaged exe only.
 
 ## 2. Events (Python -> JS)
@@ -79,7 +78,7 @@ U+2029 escaped.
   "timecode": {...}, "notes": [...], "counts": {...},
   "recent": [{"path": "D:\\clips\\promo_v3.mp4", "name": "promo_v3.mp4", "last_frame": 307, "exists": true,
               "notes_count": 3, "frames_count": 2, "notes_dir": "D:\\clips\\promo_v3_notes", "is_open": true}],
-  "settings": {"auto_download_updates": true, "notes_panel_open": true, "update_check_interval": "30m"}
+  "settings": {"auto_download_updates": true, "notes_panel_open": true}
 }
 ```
 

@@ -224,14 +224,13 @@ def build_updater(paths: AppPaths, version: str, on_status: Callable[[dict], Non
 ```
 
 ```python
-from ..vendor.selfupdate import CHECK_INTERVALS, DEFAULT_CHECK_INTERVAL, UpdateScheduler   # re-exported
+from ..vendor.selfupdate import UpdateScheduler   # re-exported
 
-INTERVAL_KEYS = ("30m", "1h", "6h", "1d", "1w")   # the keys of CHECK_INTERVALS, in display order
-
-def build_scheduler(updater: SelfUpdater, interval_key: str) -> UpdateScheduler
-    # UpdateScheduler(updater, interval_key, logger_name="frame_notes.selfupdate.schedule"); an unknown key gives
-    # DEFAULT_CHECK_INTERVAL. The shell starts it after the launch check, calls set_interval(key) when the setting
-    # changes and stop() on exit; the scheduler skips a period while an update waits for the restart.
+def build_scheduler(updater: SelfUpdater) -> UpdateScheduler
+    # UpdateScheduler(updater, logger_name="frame_notes.selfupdate.schedule"). The period is fixed by the library
+    # (CHECK_PERIOD = 300 s with a small random offset, doubling after failed checks up to an hour, no check without
+    # a network connection); there is no setting. The shell starts it after the launch check and calls stop() on
+    # exit; the scheduler skips a period while an update waits for the restart.
 ```
 
 Test: `build_updater` with a scratch `AppPaths` yields a `SelfUpdater` whose `config` carries exactly these values
@@ -247,12 +246,13 @@ DEFAULTS = {
     "fps_overrides": {},               # {absolute video path: fps}
     "auto_download_updates": True,
     "notes_panel_open": True,
-    "update_check_interval": "30m",    # key of the self-updater's CHECK_INTERVALS; validated by the shell
 }
+RETIRED_KEYS = ("update_check_interval",)   # written by 1.1.0; dropped on load, never written back
 
 class Settings:
     def __init__(self, path: Path)
-    def load(self) -> None             # missing or corrupt file -> DEFAULTS, a corrupt file is renamed to settings.json.bad
+    def load(self) -> None             # missing or corrupt file -> DEFAULTS, a corrupt file is renamed to settings.json.bad;
+                                       # RETIRED_KEYS are removed without an error
     def save(self) -> None             # atomic_write_json
     data: dict                         # the current values (deep copy of DEFAULTS merged with the file)
     def touch_recent(self, path: Path, last_frame: int) -> None

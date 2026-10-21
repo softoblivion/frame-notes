@@ -268,7 +268,7 @@ always set it to a scratch location).
 
 | Path | Content |
 |---|---|
-| `settings.json` | window size and position, last folder, recent files (path, last frame, fps override), `check_updates` (always on, kept for forward compatibility), `auto_download_updates`, `update_check_interval` |
+| `settings.json` | window size and position, last folder, recent files (path, last frame, fps override), `check_updates` (always on, kept for forward compatibility), `auto_download_updates`, `notes_panel_open` (a key from an older version, `update_check_interval`, is dropped on load) |
 | `logs\app.log` | rotating application log |
 | `updates\` | downloaded releases and `apply.log` of the self-updater |
 
@@ -288,9 +288,10 @@ timecodes.
 
 ## 10. Self-update
 
-Recipe 1 of `RECIPES.md`: check on every launch in the background and then on a timer (setting
-`update_check_interval`: `30m` default, `1h`, `6h`, `1d`, `1w`, chosen in the update popover), download to the data folder on the reviewer's
-click (or automatically when `auto_download_updates` is on), verify size and SHA-256 against `SHA256SUMS`, swap
+Recipe 1 of `RECIPES.md`: check on every launch in the background and then every 5 minutes while the app
+runs (fixed by the library, no setting; a failed check is retried after 10, 20, 40 and at most 60 minutes, and the
+timer skips a round while Windows reports no network connection), download to the data folder on the reviewer's
+click (or automatically when `auto_download_updates` is on, the default), verify size and SHA-256 against `SHA256SUMS`, swap
 the exe on **Restart**. Release assets are exactly `FrameNotes.exe` and `SHA256SUMS`; tags `vX.Y.Z`.
 
 Implementation: the `selfupdate` package, vendored at `src/frame_notes/vendor/selfupdate/` (package
@@ -316,8 +317,8 @@ Configuration (`UpdateConfig`, built in one place, e.g. `src/frame_notes/core/se
 
 Entry point: `argv[0] == APPLY_FLAG` (`--apply-update`) goes to `run_apply(argv[1:])` before the single-instance
 mutex and before any window. Calls: `startup()` once per launch, `check_background()` on launch and on the
-button, the package's `UpdateScheduler(updater, interval_key)` started after the launch check (`set_interval(key)` when the
-setting changes, `stop()` on exit), `download_background()`, `apply()` (True -> shut down the way the close button does). The status payload
+button, the package's `UpdateScheduler(updater)` started after the launch check (`stop()` on exit),
+`download_background()`, `apply()` (True -> shut down the way the close button does). The status payload
 is the package's `UpdateStatus`, documented unchanged in the bridge contract. `build.ps1` writes
 `release\SHA256SUMS` as `<sha256>  FrameNotes.exe`; the PyInstaller spec collects the `frame_notes` submodules,
 which includes the vendored package.
