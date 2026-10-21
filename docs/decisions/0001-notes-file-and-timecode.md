@@ -10,7 +10,7 @@ notes, and timecodes in the After Effects form.
 
 ## Decision
 
-- One file per video, `<name>.notes.txt`, tab-separated `timecode  TYPE  text` lines under a short `# ` header
+- One file per video, `<name>_notes.txt`, tab-separated `timecode  TYPE  text` lines under a short `# ` header
   (format version, source file name, fps, duration). The same file is the app's own state: there is no second
   project or sidecar file, and the app reloads it on open.
 - Timecodes follow AE display rules (`h:mm:ss:ff`, drop-frame with `;` for 29.97 / 59.94), so the column pastes
@@ -28,6 +28,7 @@ notes, and timecodes in the After Effects form.
 ## Rejected
 
 - JSON state plus a text export (two files next to the video; the text would drift from the state).
-- `<name>.<ext>.notes.txt` (unambiguous, but a cluttered name for the common case).
+- `<name>.<ext>_notes.txt` (unambiguous, but a cluttered name for the common case).
+- `<name>.notes.txt` (a dot suffix reads like a second extension; the user chose the underscore form).
 - Premiere / AE marker import formats (CSV, XMP): useful later as an export, not as the primary file; the
   reviewer's deliverable is a readable list.

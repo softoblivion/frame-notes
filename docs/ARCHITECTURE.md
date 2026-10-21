@@ -32,17 +32,17 @@ editor can jump to each frame in After Effects or Premiere without conversion.
 
 ## 3. Modules
 
-| Module | Path | Owning doc | Owner |
+| Module | Path | Owning doc | Owner (v1.0.0 build) |
 |---|---|---|---|
-| Core: timecode, notes file, probe, session, settings, paths | `src/frame_notes/core/` | `docs/CORE.md` | integrator |
-| Shell: window, bridge, Windows helpers | `src/frame_notes/shell/` | `docs/BRIDGE_API.md` (the only definition of the JS <-> Python contract) | integrator |
-| UI: player, timeline, notes list, keyboard | `src/frame_notes/ui/` | `docs/UI.md` | integrator |
-| Self-update | shared library (section 10) | the library's own doc | integrator |
-| Build and release | `build/` | `docs/BUILD.md` | integrator |
+| Core: timecode, notes file, probe, session, settings, paths | `src/frame_notes/core/`, `src/frame_notes/__init__.py`, `tests/test_core_*.py` | `docs/CORE.md` | core worker |
+| Shell: local server, window, bridge, Windows helpers | `src/frame_notes/shell/`, `tests/test_shell_*.py`, `build/`, `scripts/`, `requirements*.txt`, `pyproject.toml` | `docs/BRIDGE_API.md` (the only definition of the JS <-> Python contract) | shell worker |
+| UI: player, region tool, timeline, notes list, keyboard | `src/frame_notes/ui/` | `docs/UI.md` | UI worker |
+| Self-update | `src/frame_notes/vendor/selfupdate/` (vendored, never edited here; synced by the integrator), configuration in `core/selfupdate.py` | section 10 here; the library's own docs | integrator (vendor), core worker (configuration) |
+| Build and release | `build/` | `docs/BUILD.md` | shell worker, then integrator |
 
 The owning doc of a module defines its contract (public API, events, payload types, error cases). A contract
-change is made in the doc first (`D:\Projects\_workspace\PARALLEL.md`). Module docs are written together with the
-module; until then this file is the specification.
+change is made in the doc first (`D:\Projects\_workspace\PARALLEL.md`); `CORE.md` and `BRIDGE_API.md` are written
+by the integrator, `UI.md` by the UI worker from this file. This file is the behaviour specification.
 
 ## 4. Behaviour
 
@@ -86,18 +86,42 @@ The time display shows the AE timecode of the current frame and the total durati
 | `Ctrl+C` (no text field focused) | copy the notes file text to the clipboard |
 | `Ctrl+O` | open a video |
 
-Pressing `1` / `2` / `3` during playback pauses first, then adds the note at the paused frame. A new note opens a
-one-line text field focused for typing; while that field is focused the playback keys are plain characters. Two
-notes may share a frame. Notes are sorted by frame, then by creation order.
+Pressing `1` / `2` / `3` during playback pauses first, then starts a note at the paused frame. Two notes may
+share a frame. Notes are sorted by frame, then by creation order.
+
+### Pointing at the frame (region tool)
+
+A note can carry one region that marks the element the note is about, so the reviewer does not have to describe
+it in words.
+
+1. After `1` / `2` / `3` the video is paused, the cursor over the video becomes a crosshair and a hint reads
+   "Drag to mark a region, click to put a point, or type the note".
+2. Drag draws a rectangle (shown in the note type's colour, 2 px, with a dimmed frame outside it); a click without
+   a drag puts a point marker (a small circle with a short tail). One region per note; a second drag replaces
+   the first. Regions are stored in fractions of the frame (0..1 of width and height), independent of the
+   displayed size.
+3. The text field opens next to the region (or below the video when there is none), focused. `Enter` saves (empty
+   text allowed; a note may consist of a region alone), `Esc` cancels the whole new note. While the field is
+   focused the playback keys are plain characters.
+4. On save with a region the UI captures the current frame from the `<video>` element into a canvas at the
+   video's native size, draws the region on it the way it is shown on screen, encodes PNG and sends it with the
+   note. The core writes it to the images folder (section 6). A note without a region gets no image.
+5. Selecting a note (list, marker, `↑` / `↓`) seeks to its frame and shows its region over the video; the region
+   stays visible while the playhead is on that frame. `F2` edits the text; the region of an existing note is
+   replaced by dragging a new one while the note is being edited; `Backspace` in the empty text field of an edit
+   removes the region.
 
 ### Timeline
 
 - A horizontal bar across the window below the video: ruler with timecodes at a step chosen from the zoom
-  level, playhead, one marker per note coloured by type (FIX amber, ADD green, REMOVE red). Hover shows the
-  timecode and text; click selects the note and seeks.
-- Mouse wheel zooms around the pointer, `Shift` + wheel pans; `0` resets the zoom to the whole video.
-- The notes list (right side, collapsible) shows every note as `timecode  TYPE  text`; the selected note is
-  highlighted in both places.
+  level, playhead, one marker per note coloured by type (FIX amber, ADD green, REMOVE red) with a short label
+  (the first words of the text, cut to the space available; hidden when markers collide). Hover shows a card
+  with the timecode, the type, the full text and, for a note with a region, a thumbnail of its image. Click
+  selects the note and seeks.
+- Mouse wheel over the timeline zooms around the pointer, `Shift` + wheel pans; `0` resets the zoom to the whole
+  video. Dragging in the ruler scrubs.
+- The notes list (right side, collapsible) shows every note as `timecode  TYPE  text` with a thumbnail when the
+  note has an image; the selected note is highlighted in both places.
 
 ### Saving
 
@@ -127,25 +151,38 @@ base from the frame rate):
 
 ## 6. Notes file
 
-Written next to the video: `<video name without extension>.notes.txt` (`promo_v3.mp4` -> `promo_v3.notes.txt`).
-UTF-8 without BOM, LF line endings, tab-separated columns.
+Written next to the video: `<video name without extension>_notes.txt` (`promo_v3.mp4` -> `promo_v3_notes.txt`).
+UTF-8 without BOM, LF line endings, tab-separated columns. Frame images of notes with a region go to the folder
+`<video name without extension>_notes\` next to it.
+
+```
+promo_v3.mp4
+promo_v3_notes.txt
+promo_v3_notes\0-00-12-07_FIX.png
+```
 
 ```
 # Frame Notes 1
 # source: promo_v3.mp4
 # fps: 25
 # duration: 0:01:32:10
-0:00:12:07	FIX	logo flickers for two frames
+0:00:12:07	FIX	logo flickers for two frames	rect 0.540,0.360 0.880,0.800	0-00-12-07_FIX.png
 0:00:40:00	ADD	subtitle for the second speaker
-0:01:02:15	REMOVE	second take of the handshake
+0:01:02:15	REMOVE	second take of the handshake	point 0.512,0.300	0-01-02-15_REMOVE.png
 ```
 
 - Header lines start with `# `; the first line carries the format version. `source` is the file name (no path)
   the notes belong to; on open the app refuses to attach a notes file whose `source` names a different file and
-  offers to start a new one (`promo_v3.notes.txt` may belong to `promo_v3.mov`).
-- Note lines: `<timecode>\t<TYPE>\t<text>`; `TYPE` is `FIX`, `ADD` or `REMOVE`; text is one line (tabs and line
-  breaks typed by the user are replaced by spaces). Lines that do not parse are kept as-is on save, in place, so a
-  hand-edited file is not damaged.
+  offers to start a new one (`promo_v3_notes.txt` may belong to `promo_v3.mov`).
+- Note lines: `<timecode>\t<TYPE>\t<text>[\t<region>[\t<image>]]`; `TYPE` is `FIX`, `ADD` or `REMOVE`; text is one
+  line (tabs and line breaks typed by the user are replaced by spaces). `region` is `rect x0,y0 x1,y1` or
+  `point x,y` in fractions of the frame with three decimals; `image` is the file name inside the images folder,
+  `<timecode with '-' instead of ':' or ';'>_<TYPE>.png`, with `_2`, `_3` added when the name is taken. Lines
+  that do not parse are kept on save (after the notes, in their original order), so a hand-edited file is not
+  damaged.
+- The image shows the whole frame at the video's native size with the region drawn on it, so the editor sees
+  what is meant without the app. Removing a note deletes its image; an images folder that becomes empty is
+  removed.
 - The file is readable without the app and pastes into a chat as it is. The timecode column is the one the
   editor types into the AE time field.
 
@@ -192,32 +229,65 @@ timecodes.
 
 ## 10. Self-update
 
-Recipe 1 of `RECIPES.md`: check on every launch in the background (`HEAD .../releases/latest`), download to the
-data folder on the reviewer's click (or automatically when `auto_download_updates` is on), verify size and
-SHA-256 against `SHA256SUMS`, swap the exe on **Restart**. Release assets are exactly `FrameNotes.exe` and
-`SHA256SUMS`.
+Recipe 1 of `RECIPES.md`: check on every launch in the background, download to the data folder on the reviewer's
+click (or automatically when `auto_download_updates` is on), verify size and SHA-256 against `SHA256SUMS`, swap
+the exe on **Restart**. Release assets are exactly `FrameNotes.exe` and `SHA256SUMS`; tags `vX.Y.Z`.
 
-The implementation exists in Media Saver (`app/core/selfupdate.py` with its `Net`, checksum and atomic-write
-helpers). Workspace rule (`CONVENTIONS.md`, "Workspace folders"): code needed by a second project moves to
-`_shared\<lib>\` as a project of its own and is consumed as a dependency, never copied. Decision pending with the
-user: extract the updater into `D:\Projects\_shared\selfupdate\` (MIT), parametrised by repository, asset name,
-app name, data folder and version, and make Media Saver depend on it too. Until that library exists the update
-feature is not built here.
+Implementation: the `selfupdate` package, vendored at `src/frame_notes/vendor/selfupdate/` (package
+`frame_notes.vendor.selfupdate`, version in its `VENDORED.txt`). It is maintained outside this repository with its
+own tests and shared with Media Saver; the copy here is never edited by hand, only replaced as a whole by the
+maintainer's sync script (`vendor-sync.ps1 -Lib selfupdate -Project frame-notes`), followed by this project's tests
+and build. It is stdlib-only and imports nothing outside itself.
 
-## 11. Data flow
+Configuration (`UpdateConfig`, built in one place, e.g. `src/frame_notes/core/selfupdate.py`):
+
+| Field | Frame Notes value |
+|---|---|
+| `repo` | `softoblivion/frame-notes` |
+| `asset_name` | `FrameNotes.exe` (downloads: `updates\FrameNotes-<version>.exe`) |
+| `app_name` | `Frame Notes` (messages: "Frame Notes is up to date", "Downloading Frame Notes X.Y.Z… 42%", toast "Frame Notes updated to vX.Y.Z") |
+| `version` | `frame_notes.__version__` |
+| `updates_dir` | `<data>\updates`, where `<data>` is `frame-notes_data` beside the exe (or `FRAME_NOTES_HOME`), from `core/paths.py` |
+| `exe_path` | the running exe when frozen (`sys.executable`), `None` from source |
+| `on_status` / `on_toast` | the bridge's `update` event / a toast |
+| `release_url_env` | `FRAME_NOTES_RELEASE_URL` (end-to-end test against a local server) |
+| `logger_name` | `frame_notes.selfupdate` |
+| `legacy_files` | none |
+
+Entry point: `argv[0] == APPLY_FLAG` (`--apply-update`) goes to `run_apply(argv[1:])` before the single-instance
+mutex and before any window. Calls: `startup()` once per launch, `check_background()` on launch and on the
+button, `download_background()`, `apply()` (True -> shut down the way the close button does). The status payload
+is the package's `UpdateStatus`, documented unchanged in the bridge contract. `build.ps1` writes
+`release\SHA256SUMS` as `<sha256>  FrameNotes.exe`; the PyInstaller spec collects the `frame_notes` submodules,
+which includes the vendored package.
+
+## 11. Shell: window and local server
+
+- The shell runs its own HTTP server on `127.0.0.1` (first free port from 42011) that serves both the UI folder
+  and the opened video (`/media/<token>/<name>`, with HTTP range requests so the `<video>` element can seek).
+  UI and video share one origin, so the UI may draw the video into a canvas and read the pixels back (a video
+  from another origin would taint the canvas and block the frame capture). pywebview's own server is not used.
+- One window with the native Windows frame (no custom title bar in 1.0), dark UI, title `Frame Notes` plus the
+  video name. Several instances may run at once: there is no single-instance lock, each window is its own review.
+- Python -> JS events go through one pump thread per `RECIPES.md` section 4; the `js_api` object exposes only the
+  contract methods of `docs/BRIDGE_API.md`.
+- Exit saves the window placement and the last frame, then `os._exit(0)` after the clean shutdown.
+
+## 12. Data flow
 
 ```
 video file ──open──> core.probe ──fps, duration, size──┐
-                     core.notes.load(<name>.notes.txt) ─┤──> core.session (notes in memory, sorted)
-                                                        │          │ every change
-UI <video> + timeline <──events (session, notes)── bridge <──> core.notes.save (atomic replace)
-UI keys 1/2/3, edits ──calls (add_note, edit_note, remove_note, seek)──> bridge ──> session
+                     core.notes.parse(<name>_notes.txt) ┤──> core.session (notes in memory, sorted)
+                                                        │          │ every change: notes file + PNG images
+UI <video> + timeline <──event state ── bridge <──> core.session.save (atomic replace)
+UI keys 1/2/3, region, text ──calls (add_note, update_note, remove_note)──> bridge ──> session
 ```
 
-The UI holds no state of its own beyond the playhead and the zoom: the notes list it renders is the one the
-session sent after the last change. Python -> JS events go through one pump thread per `RECIPES.md` section 4.
+The UI holds no state of its own beyond the playhead, the zoom and the note being edited: the notes list it
+renders is the one the session sent after the last change.
 
-## 12. Version
+## 13. Version
 
-`src/frame_notes/__init__.py`, `__version__ = "0.1.0"`; build script and UI read it from there. SemVer, pre-1.0:
-minor = features, patch = fixes.
+`src/frame_notes/__init__.py`, `__version__ = "1.0.0"`; build script and UI read it from there. SemVer; the first
+release is 1.0.0 (the user's rule for every project): from there minor = features, patch = fixes, major =
+breaking change for users (notes file format, key bindings).
