@@ -24,6 +24,7 @@ for the reviewer (never a traceback; the full traceback goes to the log). Argume
 | `copy_notes_text()` | | `null` | puts `notes_text()` on the Windows clipboard; toast `Notes copied` |
 | `readable_text()` | | `string` | the readable text (`Session.readable_text()`: the export without the image lines) |
 | `copy_readable_text()` | | `null` | puts `readable_text()` on the Windows clipboard; toast `Readable notes copied` |
+| `copy_text(text)` | `string` | `null` | puts `text` on the Windows clipboard; no toast (the page shows its own, `Copied 0:01:12:05`). Needs no open video. Errors: `Invalid text.` for a non-string, a blank text or one longer than 200 characters; the clipboard error of the Copy calls |
 | `reveal(which)` | `"video" \| "notes" \| "images"` | `null` | opens Explorer with the item selected: the video; the data file inside the notes folder (`notes`); the `frames` folder (`images`). Error when it does not exist yet |
 | `reveal_recent(path)` | `string` | `null` | for a recent entry: Explorer with its notes folder selected, or the video when there is no folder. Error `File not found.` when neither exists |
 | `delete_notes(path)` | `string` | `State` | removes the notes folder of that video (`core.notes.delete_notes`); toast `Deleted 3 notes and 2 frames.` (counts from the result, `1 note`, `1 frame`, the frames part left out when 0; `Deleted the empty notes folder.` when both are 0). When `path` is the open video the session is opened again (empty) before the state is returned. Errors: the refusals of `delete_notes` |

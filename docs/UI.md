@@ -11,7 +11,7 @@ network resources, system fonts only (`Segoe UI`, `Cascadia Mono` / `Consolas` f
 |---|---|
 | `index.html` | the whole DOM: header, banner, stage (video, overlay, note editor, hint, empty state), transport, notes panel, timeline, toasts, drop veil, key help |
 | `css/tokens.css` | colours (surfaces, ink, accent, note types), fonts, radii, fixed sizes |
-| `css/base.css` | reset, buttons, badges, `kbd`, menus, toasts, error banner |
+| `css/base.css` | reset, buttons, timecode control (`.tc`), badges, `kbd`, menus, toasts, error banner |
 | `css/layout.css` | window layout, header (fps control, counts, version / update chip and popover), drop veil, key help |
 | `css/viewer.css` | stage, overlay, floating note editor, hint line, empty state, transport row |
 | `css/timeline.css` | ruler, track, markers, playhead, scroll bar, hover card |
@@ -33,7 +33,7 @@ network resources, system fonts only (`Segoe UI`, `Cascadia Mono` / `Consolas` f
 | `js/empty.js` | empty state, recent list, drag and drop |
 | `js/recent.js` | recent entry rendering shared by the empty state and the header Recent menu, the entry context menu |
 | `js/keys.js` | keyboard map |
-| `js/ui.js` | toasts, error banner, `guard()` for calls, popover helper |
+| `js/ui.js` | toasts, error banner, `guard()` for calls, popover helper, timecode control (`timecodeButton`, `initTimecodeCopy`) |
 | `js/icons.js` | transport icons (inline SVG) |
 | `assets/icon.svg` | page icon |
 
@@ -76,6 +76,8 @@ network resources, system fonts only (`Segoe UI`, `Cascadia Mono` / `Consolas` f
   (timecode, type badge, up to three lines of text, 72 x 41 thumbnail when `image_url` is set); selected row
   highlighted; empty list text explains the keys.
 - Timeline (full window width): ruler 24 px, track 66 px (three marker rows), 6 px scroll bar while zoomed.
+- Timecode control (`.tc`, section 2b): the current timecode, the duration, each note's timecode in the panel and the
+  timecode in the floating note editor are buttons that copy their text.
 - Toasts: bottom centre above the timeline, 2.5 s, at most three. Error banner: under the header, closable,
   replaced by the next error.
 - Empty state (no video): dashed drop target with `Open video` (and `Choose file` in the mock), `Ctrl+O` hint,
@@ -101,6 +103,27 @@ network resources, system fonts only (`Segoe UI`, `Cascadia Mono` / `Consolas` f
     with the pointer for 3 s or pressing `Esc` resets it;
   - a separator, then `Remove from recent` -> `forget_recent(path)`, applies the returned State.
 - Both calls go through `guard()`; an open note edit is saved before deleting the open video's notes.
+
+## 2b. Timecode control (`js/ui.js`, `.tc` in `css/base.css`)
+
+- Markup: `<button type="button" class="tc mono ..." title="Click to copy">` holding the timecode text. Dynamic
+  ones (the notes list) come from `timecodeButton(text, cls)` in `js/ui.js`; the three static ones in `index.html`
+  (`#tc-current`, `#tc-duration`, `.ne-tc`) carry the same classes. Size, weight and colour come from the place
+  (`.tc-current`, `.np-tc`, ...); `.tc` only adds the affordance: pointer cursor, `--bg-4` background on hover with
+  the row radius (`--r-m`), `user-select: text` so a drag selects the text, and `:empty { display: none }` (the
+  transport timecode is empty without a video). Padding is cancelled by a negative margin: the text does not move.
+- One delegated handler, `initTimecodeCopy()`, registered in the capture phase on `document`: a click on a `.tc`
+  stops propagation (the notes list row, the transport and the timeline never see it; a `dblclick` on it is stopped
+  too, so it does not start an edit), reads the text as displayed at that moment (the live counter included), calls
+  `copy_text(text)` through `guard()` and shows the toast `Copied <text>`. It does nothing when the pointer moved
+  more than 4 px between press and release (a text selection drag) or when the text is empty. With the rate unknown
+  the control holds the clock text `0:12.345`, which is what gets copied.
+- A click with the mouse blurs the control (Space stays play / pause, as for every button); `Enter` and `Space` with
+  keyboard focus on it copy and are not shortcuts there (`js/keys.js` skips them), the focus ring is the global one.
+- Copying while a note is being typed keeps the typing: the handler emits `tc-copied` and the composer focuses its
+  field again.
+- Not controls: the ruler labels (canvas, a drag there scrubs) and the hover card of the timeline (it ignores the
+  pointer). The recent entries show no timecode.
 
 ## 3. State model
 
@@ -216,7 +239,7 @@ Active when no `input`, `textarea`, `select` or contenteditable has focus; `Spac
 - Events: `state` -> `applyState`; `error` -> banner; `toast` -> toast; `open_request` -> save an open edit, then
   `open_video(path)`; `update` -> version chip.
 - Rejected calls show their message in the banner (`guard()`); `remove_note` success shows the local toast `Note
-  removed`. `Notes copied` is expected as a `toast` event from the shell (the mock sends it).
+  removed`, a copied timecode the local toast `Copied 0:01:12:05`. `Notes copied` is expected as a `toast` event from the shell (the mock sends it).
 - Drag and drop: the first dropped file with a video extension (else the first file); `pywebviewFullPath` ->
   `open_video(path)`; no path outside the mock -> nothing: the shell's own drop listener reads the path and sends `open_request` (BRIDGE_API.md, section 5)
 - Script errors and unhandled rejections are sent to `log("error", ...)`.
@@ -255,7 +278,8 @@ installing still needs a restart.` The check period is not a setting.
   section 6, `image_url` = data URL of the received PNG; `notes_text()` renders the notes file format.
 - `open_video(null)` opens a browser file picker; dropped and picked files are opened as object URLs (the file name
   travels in the URL fragment). A recent entry with `exists: false` (`promo_v2.mp4`) answers `File not found.`.
-- `copy_notes_text()` / `copy_readable_text()` write to the browser clipboard and send their toasts; `reveal()` and
+- `copy_notes_text()` / `copy_readable_text()` write to the browser clipboard and send their toasts; `copy_text()`
+  writes to it and sends none (the page shows `Copied <text>`); `reveal()` and
   `reveal_recent()` send a toast (or reject `No notes file yet.` / `No images yet.` / `File not found.`);
   `apply_update()` resolves `true` when ready.
 - Recent: the sample video and a missing `promo_v2.mp4` that still has notes (`notes_count: 4`, `frames_count: 1`);
