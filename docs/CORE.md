@@ -240,7 +240,7 @@ and whose `status()["stage"]` is `idle`; no network is touched.
 
 ```python
 DEFAULTS = {
-    "window": {"x": None, "y": None, "width": 1280, "height": 800, "maximized": False},
+    "window": {"x": None, "y": None},  # position only; the window size is fixed (ARCHITECTURE.md, section 11)
     "last_dir": "",
     "recent": [],                      # [{"path": str, "last_frame": int, "opened_at": int}], newest first, at most 20
     "fps_overrides": {},               # {absolute video path: fps}
@@ -248,6 +248,7 @@ DEFAULTS = {
     "notes_panel_open": True,
 }
 RETIRED_KEYS = ("update_check_interval",)   # written by 1.1.0; dropped on load, never written back
+RETIRED_WINDOW_KEYS = ("width", "height", "maximized")   # written up to 1.3.0; dropped from `window` on load
 
 class Settings:
     def __init__(self, path: Path)

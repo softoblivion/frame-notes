@@ -22,7 +22,7 @@ to the video, so the editor can jump to each frame in After Effects or Premiere 
 |---|---|
 | `src/frame_notes/__init__.py` | `__version__` (the only place of the version) |
 | `src/frame_notes/core/` | stdlib-only engine: `paths.py`, `settings.py`, `timecode.py`, `notes.py`, `probe.py`, `session.py` |
-| `src/frame_notes/shell/` | `main.py` (entry point, window, single instance), `bridge.py` (JS <-> Python API and event pump), `winutil.py` (Explorer, clipboard, DWM, frameless resize) |
+| `src/frame_notes/shell/` | `main.py` (entry point, window, single instance), `bridge.py` (JS <-> Python API and event pump), `winutil.py` (Explorer, clipboard, message box, screen and work-area metrics) |
 | `src/frame_notes/ui/` | `index.html`, `css/`, `js/`, `assets/` (icon, embedded fonts); served by pywebview's local HTTP server |
 | `tests/` | `unittest` suite, mirrors `src/frame_notes/` |
 | `build/` | `build.ps1`, `FrameNotes.spec`, `entry.py`, icon generator |
@@ -268,7 +268,7 @@ always set it to a scratch location).
 
 | Path | Content |
 |---|---|
-| `settings.json` | window size and position, last folder, recent files (path, last frame, fps override), `check_updates` (always on, kept for forward compatibility), `auto_download_updates`, `notes_panel_open` (a key from an older version, `update_check_interval`, is dropped on load) |
+| `settings.json` | window position (x, y; the size is fixed, section 11; the keys `width`, `height` and `maximized` of older versions are dropped on load), last folder, recent files (path, last frame, fps override), `check_updates` (always on, kept for forward compatibility), `auto_download_updates`, `notes_panel_open` (a key from an older version, `update_check_interval`, is dropped on load) |
 | `logs\app.log` | rotating application log |
 | `updates\` | downloaded releases and `apply.log` of the self-updater |
 
@@ -315,6 +315,19 @@ Configuration (`UpdateConfig`, built in one place, e.g. `src/frame_notes/core/se
 | `logger_name` | `frame_notes.selfupdate` |
 | `legacy_files` | none |
 
+Update notice (the update sheet): the first time in a run that the status is `available`, or `downloading` /
+`ready` for a version not announced yet, the UI opens a modal sheet over the window with the new version, the
+installed version, size and date, the release notes rendered from Markdown by a small escaping renderer, and the
+buttons **Install** and **Later**. **Install** at `available` calls `download_update()` and arms the install:
+the sheet shows the progress and, once the file is verified (`ready`), calls `apply_update()` at once (the app has
+no long-running work, so there is no restart warning). With automatic download the sheet may open while the
+download runs or is done; the button then reads `Downloading… 42%` (disabled) and `Restart to update` (disabled
+when `can_apply` is false, as when running from source). A failed download shows the message and **Try again**.
+**Later**, `Esc` and a click on the dimmed area close the sheet and disarm the install; the sheet does not open by
+itself again for the same version in that run, and the version chip opens it (instead of the popover) while a newer
+version is known. The sheet never opens for `up_to_date` or after a failed check. It is UI only: the shell and
+the bridge contract are unchanged (`docs/UI.md`, "Update sheet").
+
 Entry point: `argv[0] == APPLY_FLAG` (`--apply-update`) goes to `run_apply(argv[1:])` before the single-instance
 mutex and before any window. Calls: `startup()` once per launch, `check_background()` on launch and on the
 button, the package's `UpdateScheduler(updater)` started after the launch check (`stop()` on exit),
@@ -329,11 +342,21 @@ which includes the vendored package.
   and the opened video (`/media/<token>/<name>`, with HTTP range requests so the `<video>` element can seek).
   UI and video share one origin, so the UI may draw the video into a canvas and read the pixels back (a video
   from another origin would taint the canvas and block the frame capture). pywebview's own server is not used.
-- One window with the native Windows frame (no custom title bar in 1.0), dark UI, title `Frame Notes` plus the
+- One window with the native Windows frame (no custom title bar), dark UI, title `Frame Notes` plus the
   video name. Several instances may run at once: there is no single-instance lock, each window is its own review.
+- Fixed window (the workspace rule of 2026-10-21, "Fixed window size by default"): `resizable=False`, which makes
+  pywebview use the `FixedSingle` border and `MaximizeBox = False` (`webview/platforms/winforms.py`): no sizing
+  border, no maximize button, and a double click on the title bar does not maximize. There is no `min_size` and
+  no size or maximize handling in the shell. The size is 1280 x 800 logical pixels (the outer window; the client
+  area is a little smaller), scaled down in whole steps when the work area of the monitor the window opens on
+  (monitor minus taskbar, in logical pixels, from `winutil.work_area`) is smaller: the first of 1280x800,
+  1152x720, 1024x640, 960x600 that fits wins, the last one otherwise (`choose_window_size` in `shell/main.py`,
+  unit tested). Only the position is saved (`window.x`, `window.y` in `settings.json`) and restored; a saved
+  position that would leave the window off every monitor is ignored (`restore_position`), as is a minimized
+  window's position. The `width`, `height` and `maximized` keys of earlier versions are ignored and dropped.
 - Python -> JS events go through one pump thread per `RECIPES.md` section 4; the `js_api` object exposes only the
   contract methods of `docs/BRIDGE_API.md`.
-- Exit saves the window placement and the last frame, then `os._exit(0)` after the clean shutdown.
+- Exit saves the window position and the last frame, then `os._exit(0)` after the clean shutdown.
 
 ## 12. Data flow
 
@@ -350,6 +373,6 @@ renders is the one the session sent after the last change.
 
 ## 13. Version
 
-`src/frame_notes/__init__.py`, `__version__ = "1.1.0"`; build script and UI read it from there. SemVer; the first
+`src/frame_notes/__init__.py`, `__version__ = "1.4.0"`; build script and UI read it from there. SemVer; the first
 release is 1.0.0 (the user's rule for every project): from there minor = features, patch = fixes, major =
 breaking change for users (notes file format, key bindings).

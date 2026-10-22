@@ -9,10 +9,10 @@ network resources, system fonts only (`Segoe UI`, `Cascadia Mono` / `Consolas` f
 
 | File | Holds |
 |---|---|
-| `index.html` | the whole DOM: header, banner, stage (video, overlay, note editor, hint, empty state), transport, notes panel, timeline, toasts, drop veil, key help |
+| `index.html` | the whole DOM: header, banner, stage (video, overlay, note editor, hint, empty state), transport, notes panel, timeline, toasts, drop veil, update sheet, key help |
 | `css/tokens.css` | colours (surfaces, ink, accent, note types), fonts, radii, fixed sizes |
 | `css/base.css` | reset, buttons, timecode control (`.tc`), badges, `kbd`, menus, toasts, error banner |
-| `css/layout.css` | window layout, header (fps control, counts, version / update chip and popover), drop veil, key help |
+| `css/layout.css` | window layout, header (fps control, counts, version / update chip and popover), update sheet, drop veil, key help |
 | `css/viewer.css` | stage, overlay, floating note editor, hint line, empty state, transport row |
 | `css/timeline.css` | ruler, track, markers, playhead, scroll bar, hover card |
 | `css/panel.css` | notes panel |
@@ -29,7 +29,7 @@ network resources, system fonts only (`Segoe UI`, `Cascadia Mono` / `Consolas` f
 | `js/timeline.js` | ruler, markers, playhead, zoom / pan / scrub, hover card |
 | `js/notes.js` | notes panel list, selection, inline edit host |
 | `js/header.js` | open, file name and size, fps control, counts, Copy split menu, Reveal menu, Recent menu, Keys, panel toggle |
-| `js/update.js` | version chip and update popover (with the automatic download checkbox and its hint) |
+| `js/update.js` | version chip, update popover (with the automatic download checkbox and its hint), update sheet and its Markdown renderer |
 | `js/empty.js` | empty state, recent list, drag and drop |
 | `js/recent.js` | recent entry rendering shared by the empty state and the header Recent menu, the entry context menu |
 | `js/keys.js` | keyboard map |
@@ -69,7 +69,7 @@ network resources, system fonts only (`Segoe UI`, `Cascadia Mono` / `Consolas` f
 - Stage: `<video>` without controls fills the stage with `object-fit: contain`. The overlay `<svg>` is positioned
   to the displayed frame rectangle (`min(cw/vw, ch/vh)` scale, centred) and gets `viewBox = 0 0 w h`; the rectangle
   is recomputed by a `ResizeObserver` on the stage and on `loadedmetadata` / `resize` of the video, so the overlay
-  follows window resizes, the banner and the panel toggle.
+  follows the banner and the panel toggle (the window itself has a fixed size).
 - Transport (48 px): first / previous / play-pause / next / last, current timecode (20 px mono), duration,
   `frame N` (hidden below 1100 px), and the key legend whose keys are also buttons.
 - Notes panel (320 px, right of the viewer only): header with count and a hide button, one row per note
@@ -237,7 +237,7 @@ Active when no `input`, `textarea`, `select` or contenteditable has focus; `Spac
   the returned `State`, then delivers events queued meanwhile, then asks `update_status()`. After 8 s without the
   bridge the banner says so (in a browser without `?mock=1`).
 - Events: `state` -> `applyState`; `error` -> banner; `toast` -> toast; `open_request` -> save an open edit, then
-  `open_video(path)`; `update` -> version chip.
+  `open_video(path)`; `update` -> version chip and update sheet.
 - Rejected calls show their message in the banner (`guard()`); `remove_note` success shows the local toast `Note
   removed`, a copied timecode the local toast `Copied 0:01:12:05`. `Notes copied` is expected as a `toast` event from the shell (the mock sends it).
 - Drag and drop: the first dropped file with a video extension (else the first file); `pywebviewFullPath` ->
@@ -256,12 +256,56 @@ Active when no `input`, `textarea`, `select` or contenteditable has focus; `Spac
 | `ready` without `can_apply` | `v1.1.0 downloaded`, accent (the message says why it cannot apply) |
 | `error` | `v1.0.0`, muted, amber dot, `message` as tooltip |
 
-The chip opens a popover: `message`, release notes as pre-wrapped plain text (max 200 px, scrolls) while a release
+While a newer version is known (`stage` `available`, `downloading` or `ready`) the chip opens the update sheet
+(below) instead of the popover. In every other stage it opens the popover: `message`, release notes as pre-wrapped plain text (max 200 px, scrolls) while a release
 is available / downloading / ready, `Check for updates` (disabled while checking or downloading), `Download`
 (enabled when `available`), `Restart` (enabled when `ready` and `can_apply`; `true` from `apply_update()` disables
 everything and shows nothing more), `Download updates automatically` bound to
 `settings.auto_download_updates` through `set_setting`, with a small muted line under it: `Checked every 5 minutes;
 installing still needs a restart.` The check period is not a setting.
+
+### Update sheet (`js/update.js`, `#update-sheet`)
+
+A modal notice for a newer version: a dimmed scrim over the whole window and a centred panel (max width 520 px,
+max height 80 % of the window; the release notes scroll inside it).
+
+- Content: title `Frame Notes <latest>`; one muted line `Installed v<current> · <size> · <date>` (size as `12.1 MB`,
+  1024-based; date as `Oct 21, 2026` in en-US; parts that are unknown are left out); the release notes; while
+  `downloading` a progress bar with `42% · 5.1 MB of 12.1 MB`; an error box for a failed download or a refused call;
+  the buttons **Later** and **Install**.
+- Release notes: `renderMarkdown(md)` in `js/update.js`, a copy of the shared web kit's `renderMarkdown`
+  (`liquid_ui`, `js/update.js`). It escapes HTML first and understands headings, bullets, paragraphs, `**bold**`,
+  `` `code` `` and `[text](https://...)` links, plus `---` as a rule (the workspace release notes layout uses it).
+  Without a Markdown body the sheet says `No release notes for this version.`. The bridge has no `open_url` call, so
+  a link is shown as its text followed by the address as plain text; when `open_url` is added to `js/bridge.js` the
+  renderer makes links clickable and sends them through it. The notes are re-rendered only when the text changes,
+  so the scroll position survives progress updates.
+- Opens by itself the first time in a run that a newer version is reported (`available`, or `downloading` / `ready`
+  for a version not announced yet); never for `up_to_date` or `error` after a check. While a note is being typed
+  (`app.edit`) the opening waits until the editor closes. A version is announced once per run: after **Later** the
+  sheet does not open for it again by itself. The chip reopens it at any time. A report of a different, newer
+  version opens it again.
+- **Install** (primary button) follows the stage:
+
+| Stage | Button | Action |
+|---|---|---|
+| `available` | `Install` | `download_update()`, arms the install; the button turns into `Downloading… 0%` at once |
+| `downloading` | `Downloading… 42%` (disabled) | none; with an armed install the restart follows the download |
+| `ready`, armed | `Restarting…` (disabled) | `apply_update()` is called as soon as `ready` arrives (and `can_apply` is true) |
+| `ready`, not armed (automatic download) | `Restart to update` | `apply_update()` |
+| `ready`, `can_apply` false | `Restart to update` (disabled, tooltip = the status `message`) | none (a run from source) |
+| `error` | `Try again` | `download_update()` after a failed download, else `check_updates()`; the message shows above the buttons |
+| `checking` | `Checking…` (disabled) | none |
+
+  The app has no long-running work, so there is no restart warning. `apply_update()` returning `false` or failing
+  shows the message in the sheet and disarms. When the status becomes `up_to_date` or `idle` while the sheet is
+  open, it closes.
+- **Later**, `Esc` and a press on the scrim close the sheet, disarm a pending install (no restart happens later by
+  itself) and put focus back on the chip. The chip keeps its text and dot; the popover keeps working whenever no
+  newer version is known.
+- Modal behaviour: focus moves into the panel on open (the panel itself, so `Enter` does not install by accident),
+  `Tab` cycles through the notes area, **Later** and **Install**, and a capture-phase `keydown` handler stops every
+  key from reaching the shortcuts behind the sheet (`js/keys.js`), except what the browser does by default.
 
 ## 9. Mock mode (`?mock=1`)
 
@@ -271,7 +315,9 @@ installing still needs a restart.` The check period is not a setting.
 |---|---|
 | `video=<url>` | opened on `ready()` (relative to the page); also listed in `recent` |
 | `fps=<rate>` / `fps=unknown` | the "probed" rate, default 25; `unknown` gives `fps_source: "unknown"` |
-| `update=available` | a check 1.2 s after start finds `1.1.0`; with auto download on it downloads over 3 s to `ready` with `can_apply: true` |
+| `update=available` | a check 1.2 s after start finds `1.4.0` (installed `1.3.0`, 12.1 MB, notes with a heading, a link, a rule, bold and code); the update sheet opens by itself. With auto download on (the default) it downloads over 3 s to `ready` with `can_apply: true`; Install at `available`, the progress, `ready` and the apply (a toast says the app would restart) work as in the app |
+| `auto=off` | with `update=available`: the automatic download switch starts off, so the sheet waits at `available` for **Install** |
+| `fail=1` | with `update=available`: the first download fails at 40 % (`error` with a message), **Try again** downloads again |
 
 - Probe: a hidden `<video>` reads width, height and duration; `duration_frames = round(duration * fps)`.
 - Notes: ids of 8 hex characters, `order` counter, timecodes from `js/frames.js`, image names per `ARCHITECTURE.md`
@@ -307,11 +353,14 @@ The frame capture needs the video on the page's origin, so serve the UI folder a
    - `↑` / `↓`, click on a row and on a marker: seek and region display; `F2` / double click: inline edit, new
      region, `Backspace` in the empty field removes it; `Delete` and the toast; `Esc` cancels a new note;
    - wheel zoom around the pointer, `Shift` + wheel pan, scroll bar, `0`, scrub in the ruler;
-   - resize the window and toggle the panel and the banner: the overlay rectangle equals the displayed frame
-     (compare `#overlay` and the video's contain rectangle with `getBoundingClientRect()`);
+   - toggle the panel and the banner (and resize the browser viewport; the app window itself cannot be resized):
+     the overlay rectangle equals the displayed frame (compare `#overlay` and the video's contain rectangle with
+     `getBoundingClientRect()`);
    - `fps=unknown`: amber control, notes refused with a toast, `Use 25` after a second of playback; changing the rate
      in the select re-times the notes;
-   - `update=available`: chip states and popover; empty state without `video=`; Reveal errors in the banner;
+   - `update=available`: chip states and popover; the update sheet (`update=available&auto=off`: opens by itself,
+     Install shows the progress and ends in `Restarting…`; Later, `Esc` and a click on the scrim close it and nothing
+     reopens it by itself, the chip does; `&fail=1`: `Try again`); empty state without `video=`; Reveal errors in the banner;
    - the console stays free of errors.
 4. The real window (pywebview, `pywebviewFullPath`, Explorer reveal, clipboard, update apply) is checked with the
    shell (`scripts\run_dev.bat`), not by the mock.
