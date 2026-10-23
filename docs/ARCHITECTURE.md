@@ -13,8 +13,8 @@ to the video, so the editor can jump to each frame in After Effects or Premiere 
   ProRes do not play, see section 9).
 - Packaging: PyInstaller 6.22.3, one-file windowed exe `FrameNotes.exe`, about 12 MB; needs the Microsoft Edge
   WebView2 Runtime on the target machine (preinstalled on Windows 11).
-- Recipes followed: `D:\Projects\_workspace\RECIPES.md` sections 1 (self-update) and 4 (pywebview UI). Section 3
-  (managed ffmpeg) is planned for proxies of unsupported codecs, not part of the first version.
+- Self-update from GitHub Releases (section 10). A managed `ffmpeg.exe` for proxies of unsupported codecs is
+  planned (section 9), not part of the first version.
 
 ## 2. Layout
 
@@ -27,22 +27,23 @@ to the video, so the editor can jump to each frame in After Effects or Premiere 
 | `tests/` | `unittest` suite, mirrors `src/frame_notes/` |
 | `build/` | `build.ps1`, `FrameNotes.spec`, `entry.py`, icon generator |
 | `scripts/` | `run_dev.bat` and other development helpers, not shipped |
-| `docs/` | this file, module docs, `BUILD.md`, `releases/`, `decisions/`, `assets/` |
+| `docs/` | this file, module docs, `USER_GUIDE.md`, `BUILD.md`, `THIRD_PARTY.md`, `releases/`, `assets/` |
 | `release/` | build output, ignored |
 
 ## 3. Modules
 
-| Module | Path | Owning doc | Owner (v1.0.0 build) |
-|---|---|---|---|
-| Core: timecode, notes file, probe, session, settings, paths | `src/frame_notes/core/`, `src/frame_notes/__init__.py`, `tests/test_core_*.py` | `docs/CORE.md` | core worker |
-| Shell: local server, window, bridge, Windows helpers | `src/frame_notes/shell/`, `tests/test_shell_*.py`, `build/`, `scripts/`, `requirements*.txt`, `pyproject.toml` | `docs/BRIDGE_API.md` (the only definition of the JS <-> Python contract) | shell worker |
-| UI: player, region tool, timeline, notes list, keyboard | `src/frame_notes/ui/` | `docs/UI.md` | UI worker |
-| Self-update | `src/frame_notes/vendor/selfupdate/` (vendored, never edited here; synced by the integrator), configuration in `core/selfupdate.py` | section 10 here; the library's own docs | integrator (vendor), core worker (configuration) |
-| Build and release | `build/` | `docs/BUILD.md` | shell worker, then integrator |
+| Module | Path | Owning doc |
+|---|---|---|
+| Core: timecode, notes file, probe, session, settings, paths | `src/frame_notes/core/`, `src/frame_notes/__init__.py`, `tests/test_core_*.py` | `docs/CORE.md` |
+| Shell: local server, window, bridge, Windows helpers | `src/frame_notes/shell/`, `tests/test_shell_*.py`, `build/`, `scripts/`, `requirements*.txt`, `pyproject.toml` | `docs/BRIDGE_API.md` (the only definition of the JS <-> Python contract) |
+| UI: player, region tool, timeline, notes list, keyboard | `src/frame_notes/ui/` | `docs/UI.md` |
+| Self-update | `src/frame_notes/vendor/selfupdate/` (vendored, never edited here; replaced as a whole from the shared library), configuration in `core/selfupdate.py` | section 10 here; the library's own docs |
+| Build and release | `build/` | `docs/BUILD.md` |
 
 The owning doc of a module defines its contract (public API, events, payload types, error cases). A contract
-change is made in the doc first (`D:\Projects\_workspace\PARALLEL.md`); `CORE.md` and `BRIDGE_API.md` are written
-by the integrator, `UI.md` by the UI worker from this file. This file is the behaviour specification.
+change is made in the doc first, then in the code: `CORE.md` and `BRIDGE_API.md` are the contracts the code and
+the tests are written against, and `UI.md` derives the interface from this file. This file is the behaviour
+specification.
 
 ## 4. Behaviour
 
@@ -164,7 +165,8 @@ base from the frame rate):
 ## 6. Notes file
 
 Since 1.1.0 everything of one review lives in one folder next to the video, `<video name without extension>_notes\`
-(`promo_v3.mp4` -> `promo_v3_notes\`); decision record `docs/decisions/0002-notes-folder.md`.
+(`promo_v3.mp4` -> `promo_v3_notes\`), so a reviewed video adds one entry to its folder; the data file stays the
+one source of truth and the readable export is derived from it.
 
 ```
 promo_v3.mp4
@@ -282,13 +284,13 @@ Vorbis, Ogg. Not played: HEVC (H.265) without the Windows HEVC extension, ProRes
 uncompressed or PCM-only tracks. Review renders from After Effects and Premiere are normally H.264 MP4, which is
 the first version's target.
 
-Planned (not in the first version): a managed `ffmpeg.exe` per `RECIPES.md` section 3 that transcodes an
+Planned (not in the first version): a managed `ffmpeg.exe` that transcodes an
 unsupported file into a proxy in `frame-notes_data\proxies\` on open, with the original's frame rate kept for the
 timecodes.
 
 ## 10. Self-update
 
-Recipe 1 of `RECIPES.md`: check on every launch in the background and then every 5 minutes while the app
+Check on every launch in the background and then every 5 minutes while the app
 runs (fixed by the library, no setting; a failed check is retried after 10, 20, 40 and at most 60 minutes, and the
 timer skips a round while Windows reports no network connection), download to the data folder on the reviewer's
 click (or automatically when `auto_download_updates` is on, the default), verify size and SHA-256 against `SHA256SUMS`, swap
@@ -344,7 +346,7 @@ which includes the vendored package.
   from another origin would taint the canvas and block the frame capture). pywebview's own server is not used.
 - One window with the native Windows frame (no custom title bar), dark UI, title `Frame Notes` plus the
   video name. Several instances may run at once: there is no single-instance lock, each window is its own review.
-- Fixed window (the workspace rule of 2026-10-21, "Fixed window size by default"): `resizable=False`, which makes
+- Fixed window: `resizable=False`, which makes
   pywebview use the `FixedSingle` border and `MaximizeBox = False` (`webview/platforms/winforms.py`): no sizing
   border, no maximize button, and a double click on the title bar does not maximize. There is no `min_size` and
   no size or maximize handling in the shell. The size is 1280 x 800 logical pixels (the outer window; the client
@@ -354,7 +356,7 @@ which includes the vendored package.
   unit tested). Only the position is saved (`window.x`, `window.y` in `settings.json`) and restored; a saved
   position that would leave the window off every monitor is ignored (`restore_position`), as is a minimized
   window's position. The `width`, `height` and `maximized` keys of earlier versions are ignored and dropped.
-- Python -> JS events go through one pump thread per `RECIPES.md` section 4; the `js_api` object exposes only the
+- Python -> JS events go through one pump thread; the `js_api` object exposes only the
   contract methods of `docs/BRIDGE_API.md`.
 - Exit saves the window position and the last frame, then `os._exit(0)` after the clean shutdown.
 
@@ -374,5 +376,5 @@ renders is the one the session sent after the last change.
 ## 13. Version
 
 `src/frame_notes/__init__.py`, `__version__ = "1.4.0"`; build script and UI read it from there. SemVer; the first
-release is 1.0.0 (the user's rule for every project): from there minor = features, patch = fixes, major =
+release is 1.0.0 (there is no 0.x line): from there minor = features, patch = fixes, major =
 breaking change for users (notes file format, key bindings).

@@ -1,6 +1,6 @@
 # Core
 
-Owner: core worker (v1.0.0 build), then integrator. Package `src/frame_notes/core/`, stdlib only, never imports
+Scope: package `src/frame_notes/core/`, stdlib only, never imports
 pywebview or the shell. Tests: `tests/test_core_*.py` (`unittest`), every test sets `FRAME_NOTES_HOME` to a scratch
 folder and writes video and notes fixtures into a temporary directory only. Behaviour rules: `ARCHITECTURE.md`
 sections 4 to 8. This file is the contract the shell and the tests are written against.

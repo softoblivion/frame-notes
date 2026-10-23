@@ -1,8 +1,8 @@
 # Bridge API: the JS <-> Python contract
 
-Owner: shell worker (v1.0.0 build), then integrator. The only definition of what the UI may call and what the
-shell sends. Implemented by `src/frame_notes/shell/bridge.py` (pywebview `js_api`, pattern of `RECIPES.md`
-section 4: only the contract methods are public attributes, everything else is underscored) and consumed by
+The only definition of what the UI may call and what the shell sends. Implemented by
+`src/frame_notes/shell/bridge.py` (pywebview `js_api`: only the contract methods are public attributes,
+everything else is underscored) and consumed by
 `src/frame_notes/ui/js/bridge.js`, which also provides the mock for `?mock=1`.
 
 ## 1. Calls (JS -> Python)
@@ -121,7 +121,7 @@ UI opens the dropped file through an object URL instead.
 
 ## 6. Errors and messages
 
-Messages are one English sentence each, neutral and factual (`CONVENTIONS.md`, UI copy):
+Messages are one English sentence each, neutral and factual: what happened, in as few words as that takes.
 
 | Situation | Message |
 |---|---|

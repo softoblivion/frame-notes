@@ -1,6 +1,6 @@
 # UI
 
-Owner: UI worker (v1.0.0 build), then integrator. Scope: everything under `src/frame_notes/ui/`. Behaviour comes
+Scope: everything under `src/frame_notes/ui/`. Behaviour comes
 from `ARCHITECTURE.md` sections 4, 5, 9 and 11; the calls and events are the contract of `BRIDGE_API.md`; data
 shapes are `Session.payload()` of `CORE.md`. Plain HTML / CSS / ES modules, no build step, no framework, no
 network resources, system fonts only (`Segoe UI`, `Cascadia Mono` / `Consolas` for timecodes). Dark theme only.

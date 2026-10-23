@@ -1,7 +1,7 @@
 # Build, run and troubleshoot
 
-Toolchain and versions follow the pywebview family baseline of `D:\Projects\_workspace\RECIPES.md`, section 4;
-the versions below are the ones verified on 2026-10-21.
+Python, pywebview on WebView2 and a one-file PyInstaller build; the versions below are the ones verified on
+2026-10-21.
 
 ## 1. Toolchain
 
@@ -93,15 +93,13 @@ environment step (`-SkipBuild`); its tests, icon and PyInstaller steps were run 
 
 ## 5. Release
 
-Per `D:\Projects\_workspace\CONVENTIONS.md`, "Versioning and releases": notes in `docs/releases/vX.Y.Z.md` in the
-shared template, version bump commit `Release vX.Y.Z`, tag `vX.Y.Z` on `dev`, GitHub Release titled `vX.Y.Z`
+Notes in `docs/releases/vX.Y.Z.md` in the layout of `docs/releases/README.md`, version bump commit `Release vX.Y.Z`, tag `vX.Y.Z` on `dev`, GitHub Release titled `vX.Y.Z`
 with `FrameNotes.exe` and `SHA256SUMS` attached. A finished minor or patch version is released as soon as tests,
 build, checklist and notes are in order; a major version waits for an explicit decision.
 
 ## 6. Troubleshooting
 
-Symptom / cause / fix entries specific to this project; cross-project ones go to
-`D:\Projects\_workspace\NOTES.md`.
+Symptom / cause / fix entries for this project.
 
 ### The frozen exe shows two processes
 - Symptom: Task Manager lists two `FrameNotes.exe`; ending the first one leaves the window running.
