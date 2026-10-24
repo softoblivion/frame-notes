@@ -211,7 +211,7 @@ edited here). This module is the one place that knows the Frame Notes values:
 from ..vendor.selfupdate import APPLY_FLAG, SelfUpdater, UpdateConfig, run_apply   # re-exported for the shell
 
 REPO = "softoblivion/frame-notes"
-ASSET_NAME = "FrameNotes.exe"
+ASSET_NAME = "Retake.exe"   # the asset of the next line of the application (2.0.0 and later)
 APP_NAME = "Frame Notes"
 RELEASE_URL_ENV = "FRAME_NOTES_RELEASE_URL"
 

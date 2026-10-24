@@ -294,7 +294,9 @@ Check on every launch in the background and then every 5 minutes while the app
 runs (fixed by the library, no setting; a failed check is retried after 10, 20, 40 and at most 60 minutes, and the
 timer skips a round while Windows reports no network connection), download to the data folder on the reviewer's
 click (or automatically when `auto_download_updates` is on, the default), verify size and SHA-256 against `SHA256SUMS`, swap
-the exe on **Restart**. Release assets are exactly `FrameNotes.exe` and `SHA256SUMS`; tags `vX.Y.Z`.
+the exe on **Restart**. Since 1.4.1 the updater looks for the asset `Retake.exe`, the name of the next line of the
+application (2.0.0 and later, a different build with the same update protocol), next to `SHA256SUMS`; the 1.4.x
+releases themselves are published as `FrameNotes.exe` so that 1.4.0 finds them. Tags `vX.Y.Z`.
 
 Implementation: the `selfupdate` package, vendored at `src/frame_notes/vendor/selfupdate/` (package
 `frame_notes.vendor.selfupdate`, version in its `VENDORED.txt`). It is maintained outside this repository with its
@@ -307,7 +309,7 @@ Configuration (`UpdateConfig`, built in one place, e.g. `src/frame_notes/core/se
 | Field | Frame Notes value |
 |---|---|
 | `repo` | `softoblivion/frame-notes` |
-| `asset_name` | `FrameNotes.exe` (downloads: `updates\FrameNotes-<version>.exe`) |
+| `asset_name` | `Retake.exe` (downloads: `updates\Retake-<version>.exe`); the swapped file keeps the name of the running exe |
 | `app_name` | `Frame Notes` (messages: "Frame Notes is up to date", "Downloading Frame Notes X.Y.Z… 42%", toast "Frame Notes updated to vX.Y.Z") |
 | `version` | `frame_notes.__version__` |
 | `updates_dir` | `<data>\updates`, where `<data>` is `frame-notes_data` beside the exe (or `FRAME_NOTES_HOME`), from `core/paths.py` |
